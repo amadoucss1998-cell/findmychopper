@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Bike, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { friendlyError } from '../../lib/supabase';
 
 export default function Login() {
   const [email,    setEmail]    = useState('');
@@ -21,11 +20,19 @@ export default function Login() {
     setLoading(true);
     try {
       const user = await signIn(email.trim().toLowerCase(), password);
-      if (user.role === 'admin')     navigate('/admin',     { replace: true });
+      if (user.role === 'admin')      navigate('/admin',     { replace: true });
       else if (user.role === 'rider') navigate('/rider',     { replace: true });
       else                            navigate('/passenger', { replace: true });
     } catch (err) {
-      setError(friendlyError(err));
+      const msg = err?.message || '';
+      if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials'))
+        setError('Incorrect email or password.');
+      else if (msg === 'Failed to fetch' || msg.includes('fetch'))
+        setError('Cannot reach the server. Check your internet connection.');
+      else if (msg === 'Profile not found')
+        setError('No account found for this email. Please register.');
+      else
+        setError(msg || 'Sign in failed. Please try again.');
     }
     setLoading(false);
   }
@@ -49,14 +56,10 @@ export default function Login() {
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="email"
-                  value={email}
+                <input type="email" value={email}
                   onChange={e => { setEmail(e.target.value); setError(''); }}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
+                  placeholder="you@example.com" autoComplete="email"
+                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500" />
               </div>
             </div>
 
@@ -64,14 +67,10 @@ export default function Login() {
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type={show ? 'text' : 'password'}
-                  value={password}
+                <input type={show ? 'text' : 'password'} value={password}
                   onChange={e => { setPassword(e.target.value); setError(''); }}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  className="w-full pl-10 pr-10 py-3 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
+                  placeholder="••••••••" autoComplete="current-password"
+                  className="w-full pl-10 pr-10 py-3 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500" />
                 <button type="button" onClick={() => setShow(s => !s)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                   {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -79,7 +78,7 @@ export default function Login() {
               </div>
             </div>
 
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+            {error && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 
             <button type="submit" disabled={loading}
               className="w-full bg-orange-500 text-white py-3 rounded-xl font-semibold hover:bg-orange-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
@@ -90,9 +89,7 @@ export default function Login() {
           <div className="mt-6 pt-6 border-t border-gray-100 text-center">
             <p className="text-sm text-gray-500">
               Don't have an account?{' '}
-              <Link to="/auth/register" className="text-orange-500 font-semibold hover:text-orange-600">
-                Create one
-              </Link>
+              <Link to="/auth/register" className="text-orange-500 font-semibold hover:text-orange-600">Create one</Link>
             </p>
           </div>
         </div>

@@ -3,10 +3,10 @@ import { Search, Users } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { fmtDate } from '../../lib/utils';
 import EmptyState from '../../components/EmptyState';
-import * as db from '../../lib/db';
 
 export default function Passengers() {
-  const { getAllPassengers } = useApp();
+  const { getAllPassengers, getAllTrips } = useApp();
+  const allTrips = getAllTrips();
   const [search, setSearch] = useState('');
 
   const passengers = getAllPassengers();
@@ -41,7 +41,7 @@ export default function Passengers() {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {filtered.map(p => {
-                    const tripCount = db.getTripsForPassenger(p.id).length;
+                    const tripCount = allTrips.filter(t => t.passengerId === p.id).length;
                     return (
                       <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-5 py-4">

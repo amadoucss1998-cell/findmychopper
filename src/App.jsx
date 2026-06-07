@@ -1,10 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 
-import Landing    from './pages/Landing';
-import PhoneEntry from './pages/auth/PhoneEntry';
-import OTPVerify  from './pages/auth/OTPVerify';
-import Register   from './pages/auth/Register';
+import Landing  from './pages/Landing';
+import Login    from './pages/auth/Login';
+import Register from './pages/auth/Register';
 
 import PassengerLayout from './pages/passenger/PassengerLayout';
 import PassengerHome   from './pages/passenger/Home';
@@ -35,8 +34,7 @@ export default function App() {
           <Route path="/"    element={<Landing />} />
 
           {/* Auth */}
-          <Route path="/auth/login"    element={<PhoneEntry />} />
-          <Route path="/auth/otp"      element={<OTPVerify />} />
+          <Route path="/auth/login"    element={<Login />} />
           <Route path="/auth/register" element={<Register />} />
 
           {/* Passenger */}
