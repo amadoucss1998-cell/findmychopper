@@ -29,32 +29,48 @@ import Trips        from './pages/admin/Trips';
 import Revenue      from './pages/admin/Revenue';
 
 function OfflineBanner() {
-  const [offline, setOffline] = useState(false);
+  const [status, setStatus] = useState('checking'); // checking | ok | auth-fail | db-fail | offline
 
   useEffect(() => {
-    supabase.from('users').select('id').limit(1)
-      .then(({ error }) => {
-        if (error?.message === 'Failed to fetch' || error?.message?.includes('fetch')) {
-          setOffline(true);
-        }
+    async function diagnose() {
+      // 1. Test auth endpoint
+      const { error: authErr } = await supabase.auth.signInWithPassword({
+        email: '__probe__@test.invalid', password: 'probe',
       });
+      if (authErr?.message === 'Failed to fetch') {
+        console.error('[FMC] Auth endpoint unreachable:', authErr);
+        setStatus('offline');
+        return;
+      }
+      // authErr here is expected ("Invalid login credentials") — that means auth works
+
+      // 2. Test database (users table)
+      const { error: dbErr } = await supabase.from('users').select('id').limit(1);
+      if (dbErr) {
+        console.error('[FMC] DB error:', dbErr);
+        if (dbErr.message === 'Failed to fetch') { setStatus('offline'); return; }
+        if (dbErr.code === 'PGRST200' || dbErr.message?.includes('relation') || dbErr.message?.includes('does not exist')) {
+          setStatus('db-fail'); return;
+        }
+      }
+      setStatus('ok');
+    }
+    diagnose();
   }, []);
 
-  if (!offline) return null;
+  if (status === 'checking' || status === 'ok') return null;
+
+  const msgs = {
+    offline:  { bg: 'bg-red-500',    text: '⚠️ Cannot reach Supabase. Project may be paused.', link: 'Restore project →' },
+    'db-fail':{ bg: 'bg-amber-500',  text: '⚠️ Database tables missing. You need to run the setup SQL.', link: 'Open SQL Editor →' },
+  };
+  const m = msgs[status] || msgs.offline;
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-500 text-white text-sm px-4 py-2.5 flex items-center justify-between gap-4 shadow-lg">
-      <span>
-        ⚠️ Cannot reach the database. Your Supabase project is likely <strong>paused</strong>.
-      </span>
-      <a
-        href="https://supabase.com/dashboard/project/bzgekboxmlybkbnfnjv"
-        target="_blank"
-        rel="noreferrer"
-        className="underline font-semibold whitespace-nowrap hover:text-red-100"
-      >
-        Restore project →
-      </a>
+    <div className={`fixed top-0 left-0 right-0 z-[9999] ${m.bg} text-white text-sm px-4 py-2.5 flex items-center justify-between gap-4 shadow-lg`}>
+      <span>{m.text}</span>
+      <a href="https://supabase.com/dashboard/project/bzgekboxmlybkbnfnjv" target="_blank" rel="noreferrer"
+        className="underline font-semibold whitespace-nowrap hover:opacity-80">{m.link}</a>
     </div>
   );
 }

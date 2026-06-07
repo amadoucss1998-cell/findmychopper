@@ -71,8 +71,10 @@ export function AppProvider({ children }) {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   async function signIn(email, password) {
+    console.log('[FMC] signIn: calling auth...');
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    if (error) { console.error('[FMC] signIn auth error:', error); throw error; }
+    console.log('[FMC] signIn: auth ok, loading profile...');
     const u = await db.findUserById(data.user.id);
     if (!u) throw new Error('Account profile not found. Please register.');
     db.saveSession(u);
@@ -83,9 +85,12 @@ export function AppProvider({ children }) {
   }
 
   async function signUp(email, password, profileData) {
+    console.log('[FMC] signUp: calling auth...');
     const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
+    if (error) { console.error('[FMC] signUp auth error:', error); throw error; }
+    console.log('[FMC] signUp: auth ok, creating profile...');
     const u = await db.createUser({ id: data.user.id, email, ...profileData });
+    console.log('[FMC] signUp: profile created', u);
     db.saveSession(u);
     setUser(u);
     loadUsers();
