@@ -1,17 +1,34 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Bike, MapPin, DollarSign, Star, CheckCircle, XCircle, Navigation } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import AppMap, { MONROVIA } from '../../components/Map';
+import { LOCATIONS } from '../../lib/utils';
 import * as db from '../../lib/db';
 
+function locationCoords(name) {
+  return LOCATIONS.find(l => l.name === name) || null;
+}
+
 export default function RiderHome() {
-  const { user, activeTrip, setActiveTrip, acceptTrip, declineTrip, advanceTripStatus, getMyTrips } = useApp();
+  const { user, activeTrip, acceptTrip, declineTrip, advanceTripStatus, getMyTrips } = useApp();
   const [online,   setOnline]   = useState(false);
   const [pending,  setPending]  = useState(null);
   const [declined, setDeclined] = useState(false);
+  const [riderPos, setRiderPos] = useState(null);
+  const mapRef = useRef(null);
 
   const myTrips = getMyTrips();
   const todayTrips    = myTrips.filter(t => t.status === 'completed');
   const todayEarnings = todayTrips.reduce((s, t) => s + t.fare * 0.8, 0);
+
+  // Get rider's real position once
+  useEffect(() => {
+    navigator.geolocation?.getCurrentPosition(
+      pos => setRiderPos([pos.coords.latitude, pos.coords.longitude]),
+      ()  => setRiderPos(MONROVIA),
+      { timeout: 6000, maximumAge: 60000 }
+    );
+  }, []);
 
   // Poll for pending requests when online
   useEffect(() => {
@@ -23,6 +40,20 @@ export default function RiderHome() {
     }, 1500);
     return () => clearInterval(interval);
   }, [online, activeTrip, declined]);
+
+  // Fly to pickup when a new request arrives
+  useEffect(() => {
+    if (!pending) return;
+    const loc = locationCoords(pending.pickup);
+    if (loc) mapRef.current?.flyTo([loc.lat, loc.lng], 14);
+  }, [pending?.id]);
+
+  // Fly to show route when trip is active
+  useEffect(() => {
+    if (!activeTrip) return;
+    const pickup = locationCoords(activeTrip.pickup);
+    if (pickup) mapRef.current?.flyTo([pickup.lat, pickup.lng], 14);
+  }, [activeTrip?.id]);
 
   function goOnline()  { setOnline(true);  setDeclined(false); }
   function goOffline() { setOnline(false); setPending(null); }
@@ -39,6 +70,9 @@ export default function RiderHome() {
     setTimeout(() => setDeclined(false), 10000);
   }
 
+  const pickupCoords = activeTrip ? locationCoords(activeTrip.pickup)      : pending ? locationCoords(pending.pickup)      : null;
+  const destCoords   = activeTrip ? locationCoords(activeTrip.destination)  : pending ? locationCoords(pending.destination)  : null;
+
   const btnNext = {
     accepted: { label: "I've Arrived",  color: 'bg-orange-500 hover:bg-orange-600' },
     arrived:  { label: 'Start Trip',    color: 'bg-green-500 hover:bg-green-600'  },
@@ -47,35 +81,26 @@ export default function RiderHome() {
 
   return (
     <div className="relative min-h-screen">
-      {/* Map */}
-      <div className="relative h-[60vh] bg-gradient-to-br from-slate-100 to-slate-200 overflow-hidden">
-        <svg className="absolute inset-0 w-full h-full opacity-20">
-          <defs><pattern id="grid2" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#94a3b8" strokeWidth="0.5"/>
-          </pattern></defs>
-          <rect width="100%" height="100%" fill="url(#grid2)" />
-        </svg>
-        <svg className="absolute inset-0 w-full h-full opacity-25">
-          <line x1="0" y1="42%" x2="100%" y2="56%" stroke="#94a3b8" strokeWidth="3"/>
-          <line x1="28%" y1="0" x2="44%" y2="100%" stroke="#94a3b8" strokeWidth="2"/>
-          <line x1="62%" y1="0" x2="72%" y2="100%" stroke="#94a3b8" strokeWidth="2"/>
-        </svg>
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          <div className={`w-12 h-12 rounded-full border-4 border-white shadow-xl flex items-center justify-center transition-colors ${online ? 'bg-orange-500' : 'bg-gray-400'}`}>
-            <Bike className="w-6 h-6 text-white" />
+      <AppMap
+        ref={mapRef}
+        center={riderPos || MONROVIA}
+        zoom={14}
+        pickup={pickupCoords ? [pickupCoords.lat, pickupCoords.lng] : null}
+        destination={destCoords ? [destCoords.lat, destCoords.lng] : null}
+        showRoute={!!(activeTrip && ['accepted','arrived','started'].includes(activeTrip.status))}
+        height="60vh"
+      />
+
+      {/* Earnings overlay */}
+      <div className="absolute top-4 left-4 right-4 z-[1000]">
+        <div className="bg-white/90 backdrop-blur rounded-2xl px-4 py-3 flex items-center justify-between shadow">
+          <div>
+            <p className="text-xs text-gray-400 font-medium">Today's Earnings</p>
+            <p className="font-bold text-gray-900">${todayEarnings.toFixed(2)} · {todayTrips.length} trips</p>
           </div>
-          {online && <div className="w-14 h-14 bg-orange-400 opacity-20 rounded-full absolute -top-1 -left-1 animate-ping"></div>}
-        </div>
-        <div className="absolute top-4 left-4 right-4">
-          <div className="bg-white/90 backdrop-blur rounded-2xl px-4 py-3 flex items-center justify-between shadow">
-            <div>
-              <p className="text-xs text-gray-400 font-medium">Today's Earnings</p>
-              <p className="font-bold text-gray-900">${todayEarnings.toFixed(2)} · {todayTrips.length} trips</p>
-            </div>
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold ${online ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
-              <div className={`w-2 h-2 rounded-full ${online ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
-              {online ? 'Online' : 'Offline'}
-            </div>
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold ${online ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
+            <div className={`w-2 h-2 rounded-full ${online ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+            {online ? 'Online' : 'Offline'}
           </div>
         </div>
       </div>
