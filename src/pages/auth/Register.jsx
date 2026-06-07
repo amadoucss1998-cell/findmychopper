@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { User, ChevronLeft, Upload, Bike, FileText, Car, Mail, Lock, Eye, EyeOff, Phone } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { friendlyError } from '../../lib/supabase';
 
 // ── Shared fields ─────────────────────────────────────────────────────────────
 function EmailPasswordFields({ email, setEmail, password, setPassword, phone, setPhone, errors }) {
@@ -280,7 +281,7 @@ export default function Register() {
       else if (profileData.role === 'admin') navigate('/admin', { replace: true });
       else navigate('/passenger', { replace: true });
     } catch (err) {
-      setError(err.message || 'Registration failed');
+      setError(friendlyError(err));
       setLoading(false);
     }
   }

@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { AppProvider } from './context/AppContext';
+import { supabase } from './lib/supabase';
 
-import Landing     from './pages/Landing';
+import Landing  from './pages/Landing';
 import Login    from './pages/auth/Login';
 import Register from './pages/auth/Register';
 
@@ -26,9 +28,41 @@ import Passengers   from './pages/admin/Passengers';
 import Trips        from './pages/admin/Trips';
 import Revenue      from './pages/admin/Revenue';
 
+function OfflineBanner() {
+  const [offline, setOffline] = useState(false);
+
+  useEffect(() => {
+    supabase.from('users').select('id').limit(1)
+      .then(({ error }) => {
+        if (error?.message === 'Failed to fetch' || error?.message?.includes('fetch')) {
+          setOffline(true);
+        }
+      });
+  }, []);
+
+  if (!offline) return null;
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-500 text-white text-sm px-4 py-2.5 flex items-center justify-between gap-4 shadow-lg">
+      <span>
+        ⚠️ Cannot reach the database. Your Supabase project is likely <strong>paused</strong>.
+      </span>
+      <a
+        href="https://supabase.com/dashboard/project/bzgekboxmlybkbnfnjv"
+        target="_blank"
+        rel="noreferrer"
+        className="underline font-semibold whitespace-nowrap hover:text-red-100"
+      >
+        Restore project →
+      </a>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <AppProvider>
+      <OfflineBanner />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Landing />} />

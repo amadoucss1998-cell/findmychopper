@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Bike, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { friendlyError } from '../../lib/supabase';
 
 export default function Login() {
   const [email,    setEmail]    = useState('');
@@ -24,9 +25,7 @@ export default function Login() {
       else if (user.role === 'rider') navigate('/rider',     { replace: true });
       else                            navigate('/passenger', { replace: true });
     } catch (err) {
-      setError(err.message === 'Invalid login credentials'
-        ? 'Incorrect email or password'
-        : err.message || 'Sign in failed');
+      setError(friendlyError(err));
     }
     setLoading(false);
   }
