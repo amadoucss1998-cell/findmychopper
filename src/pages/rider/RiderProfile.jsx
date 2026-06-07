@@ -1,83 +1,120 @@
 import { useState } from 'react';
-import { Star, CheckCircle, Shield, Edit3, Save, X } from 'lucide-react';
+import { Star, CheckCircle, Shield, Edit3, Save, X, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
+import { fmtDate } from '../../lib/utils';
 import StatusBadge from '../../components/StatusBadge';
 
 export default function RiderProfile() {
-  const { riders, user, updateRiderProfile } = useApp();
-  const rider = riders.find(r => r.id === (user?.riderId || '1')) || riders[0];
+  const { user, updateProfile, logout } = useApp();
+  const navigate = useNavigate();
 
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ motorcycle: rider?.motorcycle || '', plate: rider?.plate || '' });
+  const [form, setForm] = useState({ name: user?.name || '', motorcycle: user?.motorcycle || '', plate: user?.plate || '' });
 
-  function save() {
-    updateRiderProfile(form);
-    setEditing(false);
-  }
+  function save() { updateProfile(form); setEditing(false); }
+  function handleLogout() { logout(); navigate('/'); }
 
-  if (!rider) return null;
+  const docs = [
+    { label: 'National ID',        key: 'nationalId',    img: user?.nationalId    },
+    { label: "Driver's License",   key: 'licenseImg',    img: user?.licenseImg    },
+    { label: 'Motorcycle Photo',   key: 'motorcycleImg', img: user?.motorcycleImg },
+    { label: 'Profile Photo',      key: 'profileImg',    img: user?.profileImg    },
+  ];
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
-      <h1 className="text-2xl font-extrabold text-gray-900 mb-6">My Profile</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-extrabold text-gray-900">Profile</h1>
+        <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm text-red-400 hover:text-red-600">
+          <LogOut className="w-4 h-4" /> Sign out
+        </button>
+      </div>
 
-      <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 mb-5 text-white">
-        <div className="flex items-center gap-4 mb-5">
-          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-2xl font-bold">{rider.name[0]}</div>
+      {/* Hero card */}
+      <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-5 mb-5 text-white">
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center text-2xl font-bold flex-shrink-0">
+            {user?.profileImg
+              ? <img src={user.profileImg} className="w-14 h-14 rounded-full object-cover" alt="" />
+              : (user?.name?.[0] || 'R')}
+          </div>
           <div>
-            <p className="text-xl font-bold">{rider.name}</p>
-            <p className="text-orange-200 text-sm">{rider.phone}</p>
-            <div className="mt-1"><StatusBadge status={rider.status} /></div>
+            <p className="font-bold text-lg">{user?.name}</p>
+            <p className="text-orange-200 text-sm">{user?.phone}</p>
+            <div className="mt-1"><StatusBadge status={user?.riderStatus || 'pending'} /></div>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 text-center">
-          <div><p className="text-2xl font-extrabold">{rider.rating}</p><p className="text-xs text-orange-200 flex items-center justify-center gap-0.5"><Star className="w-3 h-3 fill-white" /> Rating</p></div>
-          <div><p className="text-2xl font-extrabold">{rider.totalTrips}</p><p className="text-xs text-orange-200">Trips</p></div>
-          <div><p className="text-2xl font-extrabold">${rider.earnings.toFixed(0)}</p><p className="text-xs text-orange-200">Earned</p></div>
+          {[
+            { label: 'Rating', value: user?.rating ? user.rating.toFixed(1) : '—', sub: `${user?.ratingCount || 0} reviews` },
+            { label: 'Trips',  value: user?.totalTrips || 0, sub: 'completed' },
+            { label: 'Earned', value: `$${(user?.earnings || 0).toFixed(0)}`, sub: 'total' },
+          ].map(({ label, value, sub }) => (
+            <div key={label}>
+              <p className="text-2xl font-extrabold">{value}</p>
+              <p className="text-xs text-orange-200">{label}</p>
+              <p className="text-xs text-orange-300">{sub}</p>
+            </div>
+          ))}
         </div>
       </div>
 
+      {/* Editable info */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-4">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-gray-900">Vehicle Info</h2>
-          {editing ? (
-            <div className="flex gap-2">
-              <button onClick={() => { setForm({ motorcycle: rider.motorcycle, plate: rider.plate }); setEditing(false); }}><X className="w-4 h-4 text-gray-400" /></button>
-              <button onClick={save}><Save className="w-4 h-4 text-green-500" /></button>
-            </div>
-          ) : (
-            <button onClick={() => setEditing(true)}><Edit3 className="w-4 h-4 text-orange-500" /></button>
-          )}
+          <h2 className="font-semibold text-gray-900">Rider Info</h2>
+          {editing
+            ? <div className="flex gap-2">
+                <button onClick={() => setEditing(false)}><X className="w-4 h-4 text-gray-400" /></button>
+                <button onClick={save}><Save className="w-4 h-4 text-green-500" /></button>
+              </div>
+            : <button onClick={() => setEditing(true)}><Edit3 className="w-4 h-4 text-orange-500" /></button>
+          }
         </div>
-        {[{ key: 'motorcycle', label: 'Motorcycle Model' }, { key: 'plate', label: 'Plate Number' }].map(({ key, label }) => (
-          <div key={key} className="mb-3 last:mb-0">
-            <p className="text-xs text-gray-400 mb-1">{label}</p>
-            {editing ? (
-              <input value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
-            ) : (
-              <p className="text-sm font-medium text-gray-900">{rider[key]}</p>
-            )}
+        <div className="space-y-3">
+          {[
+            { key: 'name',       label: 'Full Name'        },
+            { key: 'motorcycle', label: 'Motorcycle Model' },
+            { key: 'plate',      label: 'Plate Number'     },
+          ].map(({ key, label }) => (
+            <div key={key}>
+              <p className="text-xs text-gray-400 mb-1">{label}</p>
+              {editing
+                ? <input value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                : <p className="text-sm font-medium text-gray-900">{user?.[key] || '—'}</p>
+              }
+            </div>
+          ))}
+          <div>
+            <p className="text-xs text-gray-400 mb-1">License Number</p>
+            <p className="text-sm font-medium text-gray-900">{user?.licenseNumber || '—'}</p>
           </div>
-        ))}
+          <div>
+            <p className="text-xs text-gray-400 mb-1">Member Since</p>
+            <p className="text-sm font-medium text-gray-900">{fmtDate(user?.createdAt)}</p>
+          </div>
+        </div>
       </div>
 
+      {/* Documents */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h2 className="font-semibold text-gray-900 mb-4">Verification</h2>
-        {[
-          { label: 'National ID', verified: true },
-          { label: "Driver's License", verified: true },
-          { label: 'Motorcycle Photo', verified: true },
-          { label: 'Profile Photo', verified: true },
-        ].map(({ label, verified }) => (
-          <div key={label} className="flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${verified ? 'bg-green-50' : 'bg-gray-50'}`}>
-              {verified ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Shield className="w-4 h-4 text-gray-300" />}
+        <h2 className="font-semibold text-gray-900 mb-4">Submitted Documents</h2>
+        <div className="space-y-2">
+          {docs.map(({ label, img }) => (
+            <div key={label} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${img ? 'bg-green-50' : 'bg-gray-50'}`}>
+                {img ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Shield className="w-4 h-4 text-gray-300" />}
+              </div>
+              <span className="text-sm font-medium text-gray-800 flex-1">{label}</span>
+              {img
+                ? <img src={img} className="w-10 h-10 object-cover rounded-lg border border-gray-100" alt="" />
+                : <span className="text-xs text-gray-400">Not uploaded</span>
+              }
             </div>
-            <span className="text-sm font-medium text-gray-800 flex-1">{label}</span>
-            <span className={`text-xs font-medium ${verified ? 'text-green-500' : 'text-gray-400'}`}>{verified ? 'Verified ✓' : 'Pending'}</span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

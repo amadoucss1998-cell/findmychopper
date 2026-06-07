@@ -1,170 +1,188 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { mockRiders, mockPassengers, mockTrips } from '../data/mockData';
+import * as db from '../lib/db';
+import { generateOTP, calcFare, haversine, locationByName, fmtDate } from '../lib/utils';
 
-const AppContext = createContext(null);
-
-function load(key, fallback) {
-  try {
-    const v = localStorage.getItem(key);
-    return v ? JSON.parse(v) : fallback;
-  } catch { return fallback; }
-}
-
-function save(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-}
+const Ctx = createContext(null);
 
 export function AppProvider({ children }) {
-  const [user, setUser]           = useState(() => load('fmc_user', null));
-  const [role, setRole]           = useState(() => load('fmc_role', null));
-  const [riders, setRiders]       = useState(() => load('fmc_riders', mockRiders));
-  const [passengers]              = useState(() => load('fmc_passengers', mockPassengers));
-  const [trips, setTrips]         = useState(() => load('fmc_trips', mockTrips));
-  const [activeTrip, setActiveTrip] = useState(() => load('fmc_activeTrip', null));
-  const [riderOnline, setRiderOnline] = useState(() => load('fmc_riderOnline', false));
+  const [user,       setUser]       = useState(() => db.getSession());
+  const [otpPhone,   setOtpPhone]   = useState('');
+  const [otpCode,    setOtpCode]    = useState('');   // shown in UI
+  const [activeTrip, setActiveTrip] = useState(null);
 
-  // Persist on every change
-  useEffect(() => { save('fmc_user', user); }, [user]);
-  useEffect(() => { save('fmc_role', role); }, [role]);
-  useEffect(() => { save('fmc_riders', riders); }, [riders]);
-  useEffect(() => { save('fmc_trips', trips); }, [trips]);
-  useEffect(() => { save('fmc_activeTrip', activeTrip); }, [activeTrip]);
-  useEffect(() => { save('fmc_riderOnline', riderOnline); }, [riderOnline]);
+  // Bootstrap admin + restore active trip on mount
+  useEffect(() => {
+    db.bootstrap();
+    if (user) {
+      const trip = db.getActiveTrip(user.id, user.role);
+      if (trip) setActiveTrip(trip);
+    }
+  }, []);
+
+  // Poll for trip status changes (rider accepts, advances, etc.)
+  useEffect(() => {
+    if (!user || !activeTrip) return;
+    const interval = setInterval(() => {
+      const fresh = db.getTrip(activeTrip.id);
+      if (fresh && fresh.status !== activeTrip.status) {
+        setActiveTrip(fresh);
+        if (['completed','cancelled'].includes(fresh.status)) {
+          clearInterval(interval);
+        }
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [user, activeTrip]);
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  function login(userData, userRole) {
-    setUser(userData);
-    setRole(userRole);
+  function sendOTP(phone) {
+    const code = generateOTP();
+    db.createOTP(phone, code);
+    setOtpPhone(phone);
+    setOtpCode(code);
+    return code;
+  }
+
+  function verifyOTP(phone, code) {
+    return db.verifyOTP(phone, code);
+  }
+
+  function loginWithUser(u) {
+    db.saveSession(u);
+    setUser(u);
+    const trip = db.getActiveTrip(u.id, u.role);
+    if (trip) setActiveTrip(trip);
   }
 
   function logout() {
+    db.clearSession();
     setUser(null);
-    setRole(null);
     setActiveTrip(null);
-    setRiderOnline(false);
-    localStorage.removeItem('fmc_user');
-    localStorage.removeItem('fmc_role');
-    localStorage.removeItem('fmc_activeTrip');
-    localStorage.removeItem('fmc_riderOnline');
+    setOtpPhone('');
+    setOtpCode('');
+  }
+
+  function updateProfile(patch) {
+    if (!user) return;
+    const updated = db.updateUser(user.id, patch);
+    db.saveSession(updated);
+    setUser(updated);
   }
 
   // ── Passenger: request a ride ─────────────────────────────────────────────
-  function requestRide({ pickup, destination, fare, distance, eta }) {
-    const trip = {
-      id: `T${Date.now()}`,
-      passengerId: user?.id || 'p1',
-      passengerName: user?.name || 'Passenger',
+  function requestRide({ pickup, destination }) {
+    const pLoc = locationByName(pickup);
+    const dLoc = locationByName(destination);
+    const distKm = haversine(pLoc.lat, pLoc.lng, dLoc.lat, dLoc.lng);
+    const durationMin = Math.round(distKm / 0.3 + 2);
+    const fare = calcFare(distKm, durationMin);
+
+    const trip = db.createTrip({
+      passengerId:   user.id,
+      passengerName: user.name,
+      passengerPhone:user.phone,
       pickup,
+      pickupLat:     pLoc.lat,
+      pickupLng:     pLoc.lng,
       destination,
+      destLat:       dLoc.lat,
+      destLng:       dLoc.lng,
       fare,
-      distance,
-      eta,
-      status: 'requested',
-      rider: null,
-      date: new Date().toLocaleString(),
-    };
+      distance:      distKm,
+      duration:      durationMin,
+    });
     setActiveTrip(trip);
-    // Auto-match a rider after 2.5s
-    setTimeout(() => {
-      const available = riders.find(r => r.status === 'approved');
-      if (!available) return;
-      setActiveTrip(t => t ? {
-        ...t,
-        status: 'accepted',
-        riderId: available.id,
-        riderName: available.name,
-        rider: available,
-      } : t);
-    }, 2500);
+    return trip;
   }
 
-  function cancelRide() {
-    if (activeTrip) {
-      setTrips(ts => [{ ...activeTrip, status: 'cancelled' }, ...ts]);
+  function cancelTrip() {
+    if (!activeTrip) return;
+    const updated = db.updateTrip(activeTrip.id, { status: 'cancelled', cancelledAt: Date.now() });
+    setActiveTrip(null);
+  }
+
+  function submitPassengerRating(score, comment = '') {
+    if (!activeTrip) return;
+    db.updateTrip(activeTrip.id, { passengerRating: score, passengerComment: comment });
+    if (activeTrip.riderId) {
+      const riderTrips = db.getTripsForRider(activeTrip.riderId).filter(t => t.passengerRating);
+      const avg = riderTrips.reduce((s, t) => s + t.passengerRating, 0) / riderTrips.length;
+      db.updateUser(activeTrip.riderId, { rating: parseFloat(avg.toFixed(1)), ratingCount: riderTrips.length });
     }
     setActiveTrip(null);
   }
 
-  // ── Rider: accept / decline ───────────────────────────────────────────────
-  function acceptRide() {
-    setActiveTrip(t => t ? { ...t, status: 'accepted' } : t);
-  }
-
-  function declineRide() {
-    setActiveTrip(t => t ? { ...t, status: 'declined' } : t);
-    setTimeout(() => setActiveTrip(null), 500);
-  }
-
-  // ── Rider: progress through trip ──────────────────────────────────────────
-  function advanceTripStatus() {
-    const next = { accepted: 'arrived', arrived: 'started', started: 'completed' };
-    setActiveTrip(t => {
-      if (!t) return t;
-      const newStatus = next[t.status];
-      if (!newStatus) return t;
-      if (newStatus === 'completed') {
-        const finished = { ...t, status: 'completed' };
-        // Add to trip history
-        setTrips(ts => [finished, ...ts]);
-        // Update rider stats
-        setRiders(rs => rs.map(r =>
-          r.id === t.riderId
-            ? { ...r, totalTrips: r.totalTrips + 1, earnings: r.earnings + t.fare * 0.8 }
-            : r
-        ));
-        setTimeout(() => setActiveTrip(null), 200);
-        return finished;
-      }
-      return { ...t, status: newStatus };
+  // ── Rider ─────────────────────────────────────────────────────────────────
+  function acceptTrip(tripId) {
+    const updated = db.updateTrip(tripId, {
+      riderId:    user.id,
+      riderName:  user.name,
+      riderPhone: user.phone,
+      riderMotorcycle: user.motorcycle,
+      riderPlate: user.plate,
+      riderRating: user.rating || 0,
+      status:     'accepted',
+      acceptedAt: Date.now(),
     });
+    setActiveTrip(updated);
   }
 
-  // ── Admin: rider management ───────────────────────────────────────────────
-  function approveRider(id) {
-    setRiders(rs => rs.map(r => r.id === id ? { ...r, status: 'approved' } : r));
+  function advanceTripStatus() {
+    if (!activeTrip) return;
+    const next = { accepted: 'arrived', arrived: 'started', started: 'completed' };
+    const newStatus = next[activeTrip.status];
+    if (!newStatus) return;
+    const patch = { status: newStatus };
+    if (newStatus === 'completed') {
+      patch.completedAt = Date.now();
+      const earn = parseFloat((activeTrip.fare * 0.8).toFixed(2));
+      db.updateUser(user.id, {
+        totalTrips: (user.totalTrips || 0) + 1,
+        earnings:   parseFloat(((user.earnings || 0) + earn).toFixed(2)),
+      });
+      const fresh = db.updateUser(user.id, {});
+      db.saveSession(fresh);
+      setUser(fresh);
+    }
+    const updated = db.updateTrip(activeTrip.id, patch);
+    setActiveTrip(newStatus === 'completed' ? null : updated);
   }
 
-  function suspendRider(id) {
-    setRiders(rs => rs.map(r => r.id === id ? { ...r, status: 'suspended' } : r));
+  function declineTrip() {
+    setActiveTrip(null);
   }
 
-  function rejectRider(id) {
-    setRiders(rs => rs.map(r => r.id === id ? { ...r, status: 'rejected' } : r));
-  }
+  // ── Admin ─────────────────────────────────────────────────────────────────
+  function approveRider(id)  { db.updateUser(id, { riderStatus: 'approved' }); }
+  function suspendRider(id)  { db.updateUser(id, { riderStatus: 'suspended' }); }
+  function rejectRider(id)   { db.updateUser(id, { riderStatus: 'rejected' }); }
+  function reinstateRider(id){ db.updateUser(id, { riderStatus: 'approved' }); }
 
-  // ── Profile update ────────────────────────────────────────────────────────
-  function updateUser(data) {
-    setUser(u => ({ ...u, ...data }));
-  }
-
-  function updateRiderProfile(data) {
-    setRiders(rs => rs.map(r => r.id === (user?.riderId || '1') ? { ...r, ...data } : r));
-  }
-
-  // ── Rider online toggle ───────────────────────────────────────────────────
-  function toggleOnline(val) {
-    setRiderOnline(val);
-    if (!val) setActiveTrip(null);
-  }
-
-  const myTrips = useCallback((id) =>
-    trips.filter(t => t.passengerId === id || t.riderId === id),
-  [trips]);
+  // ── Computed helpers ──────────────────────────────────────────────────────
+  const getAllRiders    = useCallback(() => db.getAllRiders(),     []);
+  const getAllPassengers= useCallback(() => db.getAllPassengers(), []);
+  const getAllTrips     = useCallback(() => db.getAllTrips(),      []);
+  const getMyTrips     = useCallback(() => user
+    ? (user.role === 'passenger' ? db.getTripsForPassenger(user.id) : db.getTripsForRider(user.id))
+    : [], [user]);
+  const getPending     = useCallback(() => db.getPendingTrip(),   []);
 
   return (
-    <AppContext.Provider value={{
-      user, role, login, logout, updateUser,
-      riders, passengers, trips,
-      approveRider, suspendRider, rejectRider,
-      activeTrip, requestRide, cancelRide,
-      acceptRide, declineRide, advanceTripStatus,
-      riderOnline, toggleOnline,
-      updateRiderProfile,
-      myTrips,
+    <Ctx.Provider value={{
+      user, otpPhone, otpCode,
+      sendOTP, verifyOTP, loginWithUser, logout, updateProfile,
+      activeTrip, setActiveTrip,
+      requestRide, cancelTrip, submitPassengerRating,
+      acceptTrip, advanceTripStatus, declineTrip,
+      approveRider, suspendRider, rejectRider, reinstateRider,
+      getAllRiders, getAllPassengers, getAllTrips, getMyTrips, getPending,
+      findUserByPhone: db.findUserByPhone,
+      createUser: db.createUser,
+      updateUser: db.updateUser,
     }}>
       {children}
-    </AppContext.Provider>
+    </Ctx.Provider>
   );
 }
 
-export function useApp() { return useContext(AppContext); }
+export function useApp() { return useContext(Ctx); }
