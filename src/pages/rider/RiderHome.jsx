@@ -3,16 +3,14 @@ import { Bike, MapPin, DollarSign, Star, CheckCircle, XCircle, Navigation } from
 import { useApp } from '../../context/AppContext';
 import AppMap, { MONROVIA } from '../../components/Map';
 import { LOCATIONS } from '../../lib/utils';
-import * as db from '../../lib/db';
 
 function locationCoords(name) {
   return LOCATIONS.find(l => l.name === name) || null;
 }
 
 export default function RiderHome() {
-  const { user, activeTrip, acceptTrip, declineTrip, advanceTripStatus, getMyTrips } = useApp();
+  const { user, activeTrip, acceptTrip, declineTrip, advanceTripStatus, getMyTrips, getPendingTrip } = useApp();
   const [online,   setOnline]   = useState(false);
-  const [pending,  setPending]  = useState(null);
   const [declined, setDeclined] = useState(false);
   const [riderPos, setRiderPos] = useState(null);
   const mapRef = useRef(null);
@@ -20,6 +18,10 @@ export default function RiderHome() {
   const myTrips = getMyTrips();
   const todayTrips    = myTrips.filter(t => t.status === 'completed');
   const todayEarnings = todayTrips.reduce((s, t) => s + t.fare * 0.8, 0);
+
+  // Pending trip from real-time cache (no polling needed)
+  const rawPending = online && !activeTrip ? getPendingTrip() : null;
+  const pending    = rawPending && !declined ? rawPending : null;
 
   // Get rider's real position once
   useEffect(() => {
@@ -29,17 +31,6 @@ export default function RiderHome() {
       { timeout: 6000, maximumAge: 60000 }
     );
   }, []);
-
-  // Poll for pending requests when online
-  useEffect(() => {
-    if (!online || activeTrip) { setPending(null); return; }
-    const interval = setInterval(() => {
-      const trip = db.getPendingTrip();
-      if (trip && !declined) setPending(trip);
-      else if (!trip)        setPending(null);
-    }, 1500);
-    return () => clearInterval(interval);
-  }, [online, activeTrip, declined]);
 
   // Fly to pickup when a new request arrives
   useEffect(() => {

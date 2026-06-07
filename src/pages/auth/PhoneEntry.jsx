@@ -16,7 +16,7 @@ export default function PhoneEntry() {
   const { sendOTP } = useApp();
   const navigate    = useNavigate();
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const formatted = fmtPhone(phone.trim());
     if (formatted.replace(/\D/g,'').length < 8) {
@@ -24,11 +24,9 @@ export default function PhoneEntry() {
     }
     setError('');
     setLoading(true);
-    setTimeout(() => {
-      sendOTP(formatted);
-      setLoading(false);
-      navigate(`/auth/otp?phone=${encodeURIComponent(formatted)}&role=${role}`);
-    }, 600);
+    await sendOTP(formatted);
+    setLoading(false);
+    navigate(`/auth/otp?phone=${encodeURIComponent(formatted)}&role=${role}`);
   }
 
   const tabs = [

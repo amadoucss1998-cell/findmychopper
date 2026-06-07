@@ -3,7 +3,6 @@ import { Search, Users } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { fmtDate } from '../../lib/utils';
 import EmptyState from '../../components/EmptyState';
-import * as db from '../../lib/db';
 
 export default function Passengers() {
   const { getAllPassengers } = useApp();

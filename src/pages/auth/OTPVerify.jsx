@@ -50,14 +50,14 @@ export default function OTPVerify() {
     setLoading(true);
     await new Promise(r => setTimeout(r, 400));
 
-    const valid = verifyOTP(phone, code);
+    const valid = await verifyOTP(phone, code);
     if (!valid) { setError('Incorrect code. Try again.'); setLoading(false); return; }
 
-    const existing = findUserByPhone(phone);
+    const existing = await findUserByPhone(phone);
     setLoading(false);
 
     if (existing) {
-      loginWithUser(existing);
+      await loginWithUser(existing);
       if (existing.role === 'admin')     navigate('/admin', { replace: true });
       else if (existing.role === 'rider') navigate('/rider', { replace: true });
       else                                navigate('/passenger', { replace: true });

@@ -192,9 +192,9 @@ export default function Register() {
   const { createUser, loginWithUser } = useApp();
   const navigate = useNavigate();
 
-  function handleSubmit(data) {
-    const user = createUser(data);
-    loginWithUser(user);
+  async function handleSubmit(data) {
+    const user = await createUser(data);
+    await loginWithUser(user);
     if (user.role === 'rider') navigate('/rider/pending', { replace: true });
     else                       navigate('/passenger',     { replace: true });
   }
