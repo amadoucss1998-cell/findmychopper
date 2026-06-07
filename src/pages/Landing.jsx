@@ -13,7 +13,7 @@ export default function Landing() {
           </div>
           <div className="flex items-center gap-3">
             <Link to="/auth/login" className="text-sm text-gray-600 hover:text-gray-900 font-medium px-3 py-1.5">Sign In</Link>
-            <Link to="/auth/login" className="text-sm bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-800 font-medium">Admin</Link>
+            <Link to="/auth/login?role=admin" className="text-sm bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-800 font-medium">Admin</Link>
           </div>
         </div>
       </nav>
@@ -33,7 +33,7 @@ export default function Landing() {
               <Link to="/auth/login" className="bg-white text-orange-600 font-bold px-8 py-3.5 rounded-xl hover:bg-orange-50 flex items-center gap-2 shadow-lg">
                 Book a Ride <ChevronRight className="w-4 h-4" />
               </Link>
-              <Link to="/auth/login" className="border-2 border-white text-white font-bold px-8 py-3.5 rounded-xl hover:bg-white/10">
+              <Link to="/auth/login?role=rider" className="border-2 border-white text-white font-bold px-8 py-3.5 rounded-xl hover:bg-white/10">
                 Become a Rider
               </Link>
             </div>
@@ -117,7 +117,7 @@ export default function Landing() {
           <TrendingUp className="w-12 h-12 text-orange-400 mx-auto mb-6" />
           <h2 className="text-4xl font-extrabold mb-4">Earn on your schedule</h2>
           <p className="text-gray-400 text-lg max-w-xl mx-auto mb-10">Join riders already earning with FindMyChopper. Keep 80% of every fare.</p>
-          <Link to="/auth/login" className="inline-flex items-center gap-2 bg-orange-500 text-white font-bold px-8 py-3.5 rounded-xl hover:bg-orange-600 shadow-lg">
+          <Link to="/auth/login?role=rider" className="inline-flex items-center gap-2 bg-orange-500 text-white font-bold px-8 py-3.5 rounded-xl hover:bg-orange-600 shadow-lg">
             Start Earning Today <ChevronRight className="w-4 h-4" />
           </Link>
         </div>

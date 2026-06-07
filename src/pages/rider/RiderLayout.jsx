@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 
 export default function RiderLayout() {
   const { user } = useApp();
-  if (!user || user.role !== 'rider') return <Navigate to="/auth/login" replace />;
+  if (!user || user.role !== 'rider') return <Navigate to="/auth/login?role=rider" replace />;
   if (user.riderStatus === 'pending')   return <Navigate to="/rider/pending" replace />;
   if (user.riderStatus === 'suspended') return <Navigate to="/rider/suspended" replace />;
   if (user.riderStatus === 'rejected')  return <Navigate to="/rider/rejected" replace />;
