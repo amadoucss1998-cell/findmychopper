@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Phone, Shield, RefreshCw } from 'lucide-react';
+import { Phone, Shield, RefreshCw, MessageSquare } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export default function VerifyPhone() {
@@ -13,6 +13,7 @@ export default function VerifyPhone() {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
   const [resent,  setResent]  = useState(false);
+  const [devCode, setDevCode] = useState(null); // shown when Edge Function not deployed
   const inputRefs = useRef([]);
 
   useEffect(() => {
@@ -21,19 +22,19 @@ export default function VerifyPhone() {
 
   // Auto-send OTP if phone already on profile (coming from register)
   useEffect(() => {
-    if (step === 'otp' && user?.phone && !resent) {
-      handleSend(user.phone);
-    }
+    if (step === 'otp' && user?.phone) handleSend(user.phone);
   }, []);
 
   async function handleSend(ph) {
     setLoading(true);
     setError('');
+    setDevCode(null);
     try {
-      await sendPhoneOTP(ph || phone);
+      const result = await sendPhoneOTP(ph || phone);
+      if (result.devMode) setDevCode(result.otp); // SMS fallback: show code in UI
       setStep('otp');
     } catch (err) {
-      setError(err.message || 'Failed to send SMS');
+      setError(err.message || 'Failed to send code');
     }
     setLoading(false);
   }
@@ -68,7 +69,7 @@ export default function VerifyPhone() {
     try {
       const valid = await verifyPhoneOTP(phone || user?.phone, code);
       if (!valid) { setError('Incorrect code. Try again.'); setLoading(false); return; }
-      await updateProfile({ phoneVerified: true });
+      await updateProfile({ phoneVerified: true, phone: phone || user?.phone });
       if (user?.role === 'rider') navigate('/rider/pending', { replace: true });
       else                        navigate('/passenger',     { replace: true });
     } catch (err) {
@@ -120,7 +121,7 @@ export default function VerifyPhone() {
                 {error && <p className="text-red-500 text-sm">{error}</p>}
                 <button onClick={() => handleSend(phone)} disabled={loading || !phone}
                   className="w-full bg-orange-500 text-white py-3 rounded-xl font-semibold hover:bg-orange-600 disabled:opacity-60">
-                  {loading ? 'Sending SMS…' : 'Send Code'}
+                  {loading ? 'Sending…' : 'Send Code'}
                 </button>
                 <button onClick={skipVerification} className="w-full text-gray-400 text-sm hover:text-gray-600 py-2">
                   Skip for now
@@ -131,9 +132,26 @@ export default function VerifyPhone() {
             <>
               <h2 className="text-xl font-extrabold text-gray-900 text-center mb-2">Enter the code</h2>
               <p className="text-gray-400 text-sm text-center mb-1">
-                Sent via SMS to <span className="font-medium text-gray-700">{phone || user?.phone}</span>
+                Sent to <span className="font-medium text-gray-700">{phone || user?.phone}</span>
               </p>
-              <p className="text-xs text-gray-400 text-center mb-6">Check your messages</p>
+
+              {/* Dev mode fallback — shown when Edge Function isn't deployed yet */}
+              {devCode && (
+                <div className="mt-3 mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                  <MessageSquare className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-amber-700">SMS not configured yet</p>
+                    <p className="text-xs text-amber-600 mt-0.5">
+                      Deploy the Edge Function to send real SMS. Your code for now:{' '}
+                      <span className="font-mono font-bold tracking-widest text-amber-800">{devCode}</span>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {!devCode && (
+                <p className="text-xs text-gray-400 text-center mb-4">Check your messages</p>
+              )}
 
               <form onSubmit={handleVerify}>
                 <div className="flex gap-2 justify-center mb-6" onPaste={handlePaste}>

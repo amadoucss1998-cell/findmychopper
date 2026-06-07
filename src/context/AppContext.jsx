@@ -110,9 +110,15 @@ export function AppProvider({ children }) {
   // ── SMS phone verification ────────────────────────────────────────────────
   async function sendPhoneOTP(phone) {
     const otp = generateOTP();
-    const { error } = await supabase.functions.invoke('send-sms', { body: { phone, otp } });
-    if (error) throw error;
-    return otp;
+    try {
+      const { error } = await supabase.functions.invoke('send-sms', { body: { phone, otp } });
+      if (error) throw error;
+      return { otp: null, devMode: false }; // SMS sent, don't expose code
+    } catch {
+      // Edge Function not deployed yet — store OTP directly and surface code in UI
+      await db.createOTP(phone, otp);
+      return { otp, devMode: true };
+    }
   }
 
   async function verifyPhoneOTP(phone, code) {
