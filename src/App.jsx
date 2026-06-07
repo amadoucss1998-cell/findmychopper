@@ -36,7 +36,7 @@ function WithNav({ children }) {
 export default function App() {
   return (
     <AppProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.VITE_BASE_URL || '/'}>
         <Routes>
           <Route path="/" element={<WithNav><Landing /></WithNav>} />
           <Route path="/login" element={<WithNav><Login /></WithNav>} />
