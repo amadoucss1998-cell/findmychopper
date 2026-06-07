@@ -16,7 +16,7 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
-  if (!user || user.role !== 'admin') return <Navigate to="/auth/login?role=admin" replace />;
+  if (!user || user.role !== 'admin') return <Navigate to="/auth/login" replace />;
 
   function handleLogout() { logout(); navigate('/'); }
 

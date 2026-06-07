@@ -2,51 +2,64 @@
 /**
  * FindMyChopper — one-time database setup script.
  *
- * Run from your local machine (not needed after first run):
+ * Run once from your local machine:
  *   node scripts/setup-db.js
  *
- * Requires your Supabase connection string. Find it in:
- *   Supabase Dashboard → Settings → Database → Connection string → URI
- *
- * Paste it below (replace the placeholder):
+ * You need two things from Supabase Dashboard:
+ *   1. DB connection string: Settings → Database → Connection string → URI
+ *   2. Service role key:     Settings → API → service_role key
  */
 
-const CONNECTION_STRING =
-  'postgresql://postgres:[YOUR-DB-PASSWORD]@db.bzgekboxmlybkbnfnjv.supabase.co:5432/postgres';
+const CONNECTION_STRING = 'postgresql://postgres:[YOUR-DB-PASSWORD]@db.bzgekboxmlybkbnfnjv.supabase.co:5432/postgres';
+const SERVICE_ROLE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6a2dla2JveG1seWJia25mbmp2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDg0MjI5NCwiZXhwIjoyMDk2NDE4Mjk0fQ.pLkny1PMqN-vimQazvLlDvR3NV97lAwydBTCTC-cydc';
+const SUPABASE_URL      = 'https://bzgekboxmlybkbnfnjv.supabase.co';
+
+// Admin credentials — change these before running
+const ADMIN_EMAIL    = 'admin@findmychopper.com';
+const ADMIN_PASSWORD = 'Admin@FindMyChopper1';
+const ADMIN_NAME     = 'Super Admin';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 import postgres from 'postgres';
+import { createClient } from '@supabase/supabase-js';
 
-const sql = postgres(CONNECTION_STRING, { ssl: 'require' });
+const sql         = postgres(CONNECTION_STRING, { ssl: 'require' });
+const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 async function main() {
-  console.log('Connecting to Supabase PostgreSQL…');
+  console.log('Connecting to Supabase…');
 
-  // ── Schema ──────────────────────────────────────────────────────────────────
+  // ── Schema ────────────────────────────────────────────────────────────────
   await sql`
     create table if not exists users (
-      id            uuid primary key default gen_random_uuid(),
-      phone         text unique not null,
-      name          text,
-      email         text,
-      role          text not null default 'passenger',
-      rider_status  text,
-      vehicle_type  text,
-      vehicle_plate text,
-      vehicle_color text,
-      motorcycle    text,
-      plate         text,
-      license_photo text,
-      vehicle_photo text,
-      earnings      numeric default 0,
-      total_trips   int     default 0,
-      rating        numeric,
-      rating_count  int     default 0,
-      created_at    timestamptz default now()
+      id              uuid primary key default gen_random_uuid(),
+      email           text unique,
+      phone           text,
+      phone_verified  boolean default false,
+      name            text,
+      role            text not null default 'passenger',
+      rider_status    text,
+      vehicle_type    text,
+      vehicle_plate   text,
+      vehicle_color   text,
+      motorcycle      text,
+      plate           text,
+      license_photo   text,
+      vehicle_photo   text,
+      license_number  text,
+      national_id     text,
+      earnings        numeric default 0,
+      total_trips     int     default 0,
+      rating          numeric,
+      rating_count    int     default 0,
+      created_at      timestamptz default now()
     )
   `;
   console.log('✓ users table ready');
+
+  // Add phone_verified column if upgrading from older schema
+  await sql`alter table users add column if not exists phone_verified boolean default false`.catch(() => {});
 
   await sql`
     create table if not exists trips (
@@ -89,31 +102,42 @@ async function main() {
   `;
   console.log('✓ otps table ready');
 
-  // ── Disable RLS so the anon key can read/write ───────────────────────────────
+  // ── RLS off ───────────────────────────────────────────────────────────────
   await sql`alter table users disable row level security`;
   await sql`alter table trips disable row level security`;
   await sql`alter table otps  disable row level security`;
   console.log('✓ Row level security disabled');
 
-  // ── Enable real-time on trips ────────────────────────────────────────────────
+  // ── Real-time ─────────────────────────────────────────────────────────────
   try {
     await sql`alter publication supabase_realtime add table trips`;
     console.log('✓ Real-time enabled on trips');
   } catch (e) {
-    if (e.message.includes('already')) console.log('✓ Real-time already enabled on trips');
-    else console.warn('  Real-time setup skipped:', e.message);
+    if (e.message.includes('already')) console.log('✓ Real-time already enabled');
+    else console.warn('  Real-time skipped:', e.message);
   }
 
-  // ── Seed admin account ───────────────────────────────────────────────────────
-  const [existing] = await sql`select id from users where role = 'admin' limit 1`;
-  if (!existing) {
-    await sql`
-      insert into users (phone, name, email, role)
-      values ('+231000000000', 'Super Admin', 'admin@findmychopper.com', 'admin')
-    `;
-    console.log('✓ Admin account created  (phone: +231000000000)');
+  // ── Create admin auth user + profile ─────────────────────────────────────
+  const [existingProfile] = await sql`select id from users where role = 'admin' limit 1`;
+  if (existingProfile) {
+    console.log('✓ Admin profile already exists');
   } else {
-    console.log('✓ Admin account already exists');
+    // Create in Supabase Auth (bypasses email confirmation)
+    const { data: authData, error: authErr } = await adminClient.auth.admin.createUser({
+      email:            ADMIN_EMAIL,
+      password:         ADMIN_PASSWORD,
+      email_confirm:    true,
+    });
+    if (authErr) { console.error('Auth user creation failed:', authErr.message); }
+    else {
+      await sql`
+        insert into users (id, email, name, role)
+        values (${authData.user.id}, ${ADMIN_EMAIL}, ${ADMIN_NAME}, 'admin')
+      `;
+      console.log(`✓ Admin account created`);
+      console.log(`  Email:    ${ADMIN_EMAIL}`);
+      console.log(`  Password: ${ADMIN_PASSWORD}`);
+    }
   }
 
   await sql.end();

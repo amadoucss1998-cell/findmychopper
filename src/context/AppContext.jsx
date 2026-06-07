@@ -7,11 +7,7 @@ const Ctx = createContext(null);
 
 export function AppProvider({ children }) {
   const [user,        setUser]        = useState(() => db.getSession());
-  const [otpPhone,    setOtpPhone]    = useState('');
-  const [otpCode,     setOtpCode]     = useState('');
   const [activeTrip,  setActiveTrip]  = useState(null);
-
-  // Cached data for admin pages (synchronous getters)
   const [cachedUsers, setCachedUsers] = useState([]);
   const [cachedTrips, setCachedTrips] = useState([]);
 
@@ -22,9 +18,8 @@ export function AppProvider({ children }) {
   async function loadTrips() { setCachedTrips(await db.getAllTrips()); }
   async function loadAll()   { await Promise.all([loadUsers(), loadTrips()]); }
 
-  // Bootstrap + restore session data on mount
+  // Load data + restore active trip on mount
   useEffect(() => {
-    db.bootstrap();
     loadAll();
     if (user) {
       db.getActiveTrip(user.id, user.role).then(trip => {
@@ -33,21 +28,41 @@ export function AppProvider({ children }) {
     }
   }, []);
 
-  // Supabase real-time: watch trips table for live updates
+  // Restore session from Supabase Auth on mount (handles page refresh)
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session && !user) {
+        const u = await db.findUserById(session.user.id);
+        if (u) {
+          db.saveSession(u);
+          setUser(u);
+          const trip = await db.getActiveTrip(u.id, u.role);
+          if (trip) setActiveTrip(trip);
+        }
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
+      if (event === 'SIGNED_OUT') {
+        db.clearSession();
+        setUser(null);
+        setActiveTrip(null);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Real-time: watch trips for live updates
   useEffect(() => {
     if (!user) return;
     const channel = supabase
       .channel('trips-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, async (payload) => {
-        // Refresh cached trips for admin dashboards
         loadTrips();
-        // Update activeTrip in-place if it changed
         const cur = activeTripRef.current;
         if (cur && payload.new && payload.new.id === cur.id) {
           const fresh = await db.getTrip(cur.id);
-          if (fresh) {
-            setActiveTrip(['completed', 'cancelled'].includes(fresh.status) ? null : fresh);
-          }
+          if (fresh) setActiveTrip(['completed','cancelled'].includes(fresh.status) ? null : fresh);
         }
       })
       .subscribe();
@@ -55,31 +70,33 @@ export function AppProvider({ children }) {
   }, [user?.id]);
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  async function sendOTP(phone) {
-    const code = generateOTP();
-    await db.createOTP(phone, code);
-    setOtpPhone(phone);
-    setOtpCode(code);
-    return code;
-  }
-
-  async function verifyOTP(phone, code) {
-    return db.verifyOTP(phone, code);
-  }
-
-  async function loginWithUser(u) {
+  async function signIn(email, password) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    const u = await db.findUserById(data.user.id);
+    if (!u) throw new Error('Account profile not found. Please register.');
     db.saveSession(u);
     setUser(u);
     const trip = await db.getActiveTrip(u.id, u.role);
     if (trip) setActiveTrip(trip);
+    return u;
   }
 
-  function logout() {
+  async function signUp(email, password, profileData) {
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) throw error;
+    const u = await db.createUser({ id: data.user.id, email, ...profileData });
+    db.saveSession(u);
+    setUser(u);
+    loadUsers();
+    return u;
+  }
+
+  async function logout() {
+    await supabase.auth.signOut();
     db.clearSession();
     setUser(null);
     setActiveTrip(null);
-    setOtpPhone('');
-    setOtpCode('');
   }
 
   async function updateProfile(patch) {
@@ -90,11 +107,23 @@ export function AppProvider({ children }) {
     loadUsers();
   }
 
+  // ── SMS phone verification ────────────────────────────────────────────────
+  async function sendPhoneOTP(phone) {
+    const otp = generateOTP();
+    const { error } = await supabase.functions.invoke('send-sms', { body: { phone, otp } });
+    if (error) throw error;
+    return otp;
+  }
+
+  async function verifyPhoneOTP(phone, code) {
+    return db.verifyOTP(phone, code);
+  }
+
   // ── Passenger ─────────────────────────────────────────────────────────────
   async function requestRide({ pickup, destination }) {
     const pLoc = locationByName(pickup);
     const dLoc = locationByName(destination);
-    const distKm     = haversine(pLoc.lat, pLoc.lng, dLoc.lat, dLoc.lng);
+    const distKm      = haversine(pLoc.lat, pLoc.lng, dLoc.lat, dLoc.lng);
     const durationMin = Math.round(distKm / 0.3 + 2);
     const fare = calcFare(distKm, durationMin);
 
@@ -102,15 +131,9 @@ export function AppProvider({ children }) {
       passengerId:    user.id,
       passengerName:  user.name,
       passengerPhone: user.phone,
-      pickup,
-      pickupLat:  pLoc.lat,
-      pickupLng:  pLoc.lng,
-      destination,
-      destLat:    dLoc.lat,
-      destLng:    dLoc.lng,
-      fare,
-      distance:   distKm,
-      duration:   durationMin,
+      pickup, pickupLat: pLoc.lat, pickupLng: pLoc.lng,
+      destination, destLat: dLoc.lat, destLng: dLoc.lng,
+      fare, distance: distKm, duration: durationMin,
     });
     setActiveTrip(trip);
     return trip;
@@ -138,14 +161,9 @@ export function AppProvider({ children }) {
   // ── Rider ─────────────────────────────────────────────────────────────────
   async function acceptTrip(tripId) {
     const updated = await db.updateTrip(tripId, {
-      riderId:         user.id,
-      riderName:       user.name,
-      riderPhone:      user.phone,
-      riderMotorcycle: user.motorcycle,
-      riderPlate:      user.plate,
-      riderRating:     user.rating || 0,
-      status:          'accepted',
-      acceptedAt:      Date.now(),
+      riderId: user.id, riderName: user.name, riderPhone: user.phone,
+      riderMotorcycle: user.motorcycle, riderPlate: user.plate,
+      riderRating: user.rating || 0, status: 'accepted', acceptedAt: Date.now(),
     });
     setActiveTrip(updated);
   }
@@ -181,7 +199,7 @@ export function AppProvider({ children }) {
   async function rejectRider(id)    { await db.updateUser(id, { riderStatus: 'rejected'  }); loadUsers(); }
   async function reinstateRider(id) { await db.updateUser(id, { riderStatus: 'approved'  }); loadUsers(); }
 
-  // ── Synchronous getters backed by cached state ────────────────────────────
+  // ── Getters backed by cache ───────────────────────────────────────────────
   const getAllRiders     = useCallback(() => cachedUsers.filter(u => u.role === 'rider'),     [cachedUsers]);
   const getAllPassengers = useCallback(() => cachedUsers.filter(u => u.role === 'passenger'), [cachedUsers]);
   const getAllTrips      = useCallback(() => cachedTrips,                                     [cachedTrips]);
@@ -189,22 +207,23 @@ export function AppProvider({ children }) {
     if (!user) return [];
     return user.role === 'passenger'
       ? cachedTrips.filter(t => t.passengerId === user.id)
-      : cachedTrips.filter(t => t.riderId === user.id);
+      : cachedTrips.filter(t => t.riderId     === user.id);
   }, [user, cachedTrips]);
   const getPendingTrip  = useCallback(() =>
     cachedTrips.find(t => t.status === 'requested') || null, [cachedTrips]);
 
   return (
     <Ctx.Provider value={{
-      user, otpPhone, otpCode,
-      sendOTP, verifyOTP, loginWithUser, logout, updateProfile,
+      user,
+      signIn, signUp, logout, updateProfile,
+      sendPhoneOTP, verifyPhoneOTP,
       activeTrip, setActiveTrip,
       requestRide, cancelTrip, submitPassengerRating,
       acceptTrip, advanceTripStatus, declineTrip,
       approveRider, suspendRider, rejectRider, reinstateRider,
       getAllRiders, getAllPassengers, getAllTrips, getMyTrips, getPendingTrip,
-      findUserByPhone: db.findUserByPhone,
-      createUser:      db.createUser,
+      findUserByEmail: db.findUserByEmail,
+      createUser:      (d) => db.createUser(d).then(u => { loadUsers(); return u; }),
       updateUser:      (id, patch) => db.updateUser(id, patch).then(u => { loadUsers(); return u; }),
       refreshData:     loadAll,
     }}>

@@ -1,42 +1,93 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { User, ChevronLeft, Upload, Bike, FileText, Car } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { User, ChevronLeft, Upload, Bike, FileText, Car, Mail, Lock, Eye, EyeOff, Phone } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
+// ── Shared fields ─────────────────────────────────────────────────────────────
+function EmailPasswordFields({ email, setEmail, password, setPassword, phone, setPhone, errors }) {
+  const [show, setShow] = useState(false);
+  return (
+    <>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+        <div className="relative">
+          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+            placeholder="you@example.com" autoComplete="email"
+            className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.email ? 'border-red-400' : 'border-gray-200'}`} />
+        </div>
+        {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input type={show ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="At least 8 characters" autoComplete="new-password"
+            className={`w-full pl-10 pr-10 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.password ? 'border-red-400' : 'border-gray-200'}`} />
+          <button type="button" onClick={() => setShow(s => !s)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+        {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone Number <span className="text-gray-400 font-normal">(for SMS verification)</span></label>
+        <div className="relative">
+          <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+            placeholder="+231 77 000 0000"
+            className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500" />
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Passenger registration ────────────────────────────────────────────────────
-function PassengerForm({ phone, onSubmit }) {
-  const [name, setName] = useState('');
-  const [error, setError] = useState('');
+function PassengerForm({ onSubmit, loading }) {
+  const [name,     setName]     = useState('');
+  const [email,    setEmail]    = useState('');
+  const [password, setPassword] = useState('');
+  const [phone,    setPhone]    = useState('');
+  const [errors,   setErrors]   = useState({});
 
   function submit(e) {
     e.preventDefault();
-    if (!name.trim()) { setError('Enter your full name'); return; }
-    onSubmit({ name: name.trim(), phone, role: 'passenger' });
+    const e2 = {};
+    if (!name.trim())         e2.name     = 'Required';
+    if (!email.trim())        e2.email    = 'Required';
+    if (password.length < 8)  e2.password = 'At least 8 characters';
+    if (Object.keys(e2).length) { setErrors(e2); return; }
+    onSubmit({ name: name.trim(), email: email.trim().toLowerCase(), password, phone: phone.trim(), role: 'passenger' });
   }
 
   return (
     <form onSubmit={submit} className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
-        <input value={name} onChange={e => { setName(e.target.value); setError(''); }}
+        <input value={name} onChange={e => { setName(e.target.value); setErrors(er => ({ ...er, name: '' })); }}
           placeholder="e.g. Mariama Kamara"
-          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500" />
-        {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+          className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.name ? 'border-red-400' : 'border-gray-200'}`} />
+        {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
       </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
-        <input value={phone} readOnly className="w-full px-4 py-3 border border-gray-100 bg-gray-50 rounded-xl text-gray-500 cursor-not-allowed" />
-      </div>
-      <button type="submit" className="w-full bg-orange-500 text-white py-3 rounded-xl font-semibold hover:bg-orange-600 transition-colors">
-        Create Account
+      <EmailPasswordFields email={email} setEmail={setEmail} password={password} setPassword={setPassword}
+        phone={phone} setPhone={setPhone} errors={errors} />
+      <button type="submit" disabled={loading}
+        className="w-full bg-orange-500 text-white py-3 rounded-xl font-semibold hover:bg-orange-600 disabled:opacity-60">
+        {loading ? 'Creating account…' : 'Create Account'}
       </button>
     </form>
   );
 }
 
 // ── Rider multi-step registration ─────────────────────────────────────────────
-function RiderForm({ phone, onSubmit }) {
+function RiderForm({ onSubmit, loading }) {
   const [step,  setStep]  = useState(1);
+  const [email,    setEmail]    = useState('');
+  const [password, setPassword] = useState('');
+  const [phone,    setPhone]    = useState('');
   const [form,  setForm]  = useState({
     name: '', motorcycle: '', plate: '', licenseNumber: '',
     nationalId: '', licenseImg: '', motorcycleImg: '', profileImg: '',
@@ -54,7 +105,9 @@ function RiderForm({ phone, onSubmit }) {
 
   function validateStep1() {
     const e = {};
-    if (!form.name.trim())         e.name = 'Required';
+    if (!form.name.trim())         e.name          = 'Required';
+    if (!email.trim())             e.email         = 'Required';
+    if (password.length < 8)       e.password      = 'At least 8 characters';
     if (!form.licenseNumber.trim()) e.licenseNumber = 'Required';
     if (Object.keys(e).length) { setErrors(e); return false; }
     return true;
@@ -63,7 +116,7 @@ function RiderForm({ phone, onSubmit }) {
   function validateStep2() {
     const e = {};
     if (!form.motorcycle.trim()) e.motorcycle = 'Required';
-    if (!form.plate.trim())      e.plate = 'Required';
+    if (!form.plate.trim())      e.plate      = 'Required';
     if (Object.keys(e).length) { setErrors(e); return false; }
     return true;
   }
@@ -76,21 +129,12 @@ function RiderForm({ phone, onSubmit }) {
 
   function submit() {
     onSubmit({
-      name: form.name.trim(),
-      phone,
-      role: 'rider',
-      motorcycle: form.motorcycle.trim(),
-      plate: form.plate.trim().toUpperCase(),
-      licenseNumber: form.licenseNumber.trim(),
-      nationalId: form.nationalId,
-      licenseImg: form.licenseImg,
-      motorcycleImg: form.motorcycleImg,
-      profileImg: form.profileImg,
-      riderStatus: 'pending',
-      rating: 0,
-      ratingCount: 0,
-      totalTrips: 0,
-      earnings: 0,
+      name: form.name.trim(), email: email.trim().toLowerCase(), password, phone: phone.trim(),
+      role: 'rider', motorcycle: form.motorcycle.trim(),
+      plate: form.plate.trim().toUpperCase(), licenseNumber: form.licenseNumber.trim(),
+      nationalId: form.nationalId, licenseImg: form.licenseImg,
+      motorcycleImg: form.motorcycleImg, profileImg: form.profileImg,
+      riderStatus: 'pending', rating: 0, ratingCount: 0, totalTrips: 0, earnings: 0,
     });
   }
 
@@ -109,13 +153,12 @@ function RiderForm({ phone, onSubmit }) {
 
   return (
     <div>
-      {/* Step indicators */}
       <div className="flex items-center gap-2 mb-6">
         {[1,2,3].map(n => (
           <div key={n} className="flex-1">
             <div className={`h-1.5 rounded-full transition-colors ${n <= step ? 'bg-orange-500' : 'bg-gray-200'}`} />
             <p className={`text-xs mt-1 text-center ${n === step ? 'text-orange-500 font-medium' : 'text-gray-400'}`}>
-              {n === 1 ? 'Personal' : n === 2 ? 'Vehicle' : 'Documents'}
+              {n === 1 ? 'Account' : n === 2 ? 'Vehicle' : 'Documents'}
             </p>
           </div>
         ))}
@@ -129,10 +172,8 @@ function RiderForm({ phone, onSubmit }) {
               className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.name ? 'border-red-400' : 'border-gray-200'}`} />
             {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
-            <input value={phone} readOnly className="w-full px-4 py-3 border border-gray-100 bg-gray-50 rounded-xl text-gray-500" />
-          </div>
+          <EmailPasswordFields email={email} setEmail={setEmail} password={password} setPassword={setPassword}
+            phone={phone} setPhone={setPhone} errors={errors} />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Driver License Number</label>
             <input value={form.licenseNumber} onChange={e => set('licenseNumber', e.target.value)} placeholder="e.g. LB-DL-00123"
@@ -167,15 +208,17 @@ function RiderForm({ phone, onSubmit }) {
       {step === 3 && (
         <div className="space-y-4">
           <p className="text-sm text-gray-500 bg-yellow-50 border border-yellow-100 rounded-xl p-3">
-            Upload photos of your documents for verification. Your account will be reviewed by an admin.
+            Upload photos for verification. Your account will be reviewed by an admin.
           </p>
-          <FileInput label="Profile Photo" fieldKey="profileImg" icon={User} />
-          <FileInput label="National ID" fieldKey="nationalId" icon={FileText} />
-          <FileInput label="Driver's License" fieldKey="licenseImg" icon={FileText} />
-          <FileInput label="Motorcycle Photo" fieldKey="motorcycleImg" icon={Car} />
+          <FileInput label="Profile Photo"    fieldKey="profileImg"   icon={User}     />
+          <FileInput label="National ID"      fieldKey="nationalId"   icon={FileText} />
+          <FileInput label="Driver's License" fieldKey="licenseImg"   icon={FileText} />
+          <FileInput label="Motorcycle Photo" fieldKey="motorcycleImg" icon={Car}     />
           <div className="flex gap-3">
             <button onClick={() => setStep(2)} className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">← Back</button>
-            <button onClick={submit} className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-semibold hover:bg-orange-600">Submit Application</button>
+            <button onClick={submit} disabled={loading} className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-semibold hover:bg-orange-600 disabled:opacity-60">
+              {loading ? 'Submitting…' : 'Submit Application'}
+            </button>
           </div>
         </div>
       )}
@@ -183,42 +226,104 @@ function RiderForm({ phone, onSubmit }) {
   );
 }
 
+// ── Admin registration ────────────────────────────────────────────────────────
+function AdminForm({ onSubmit, loading }) {
+  const [name,     setName]     = useState('');
+  const [email,    setEmail]    = useState('');
+  const [password, setPassword] = useState('');
+  const [errors,   setErrors]   = useState({});
+
+  function submit(e) {
+    e.preventDefault();
+    const e2 = {};
+    if (!name.trim())        e2.name     = 'Required';
+    if (!email.trim())       e2.email    = 'Required';
+    if (password.length < 8) e2.password = 'At least 8 characters';
+    if (Object.keys(e2).length) { setErrors(e2); return; }
+    onSubmit({ name: name.trim(), email: email.trim().toLowerCase(), password, role: 'admin' });
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
+        <input value={name} onChange={e => { setName(e.target.value); setErrors(er => ({ ...er, name: '' })); }}
+          placeholder="e.g. Admin User"
+          className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.name ? 'border-red-400' : 'border-gray-200'}`} />
+        {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+      </div>
+      <EmailPasswordFields email={email} setEmail={setEmail} password={password} setPassword={setPassword}
+        phone="" setPhone={() => {}} errors={errors} />
+      <button type="submit" disabled={loading}
+        className="w-full bg-orange-500 text-white py-3 rounded-xl font-semibold hover:bg-orange-600 disabled:opacity-60">
+        {loading ? 'Creating admin…' : 'Create Admin Account'}
+      </button>
+    </form>
+  );
+}
+
 // ── Page wrapper ──────────────────────────────────────────────────────────────
 export default function Register() {
-  const [searchParams] = useSearchParams();
-  const phone = searchParams.get('phone') || '';
-  const role  = searchParams.get('role')  || 'passenger';
+  const [role,    setRole]    = useState('passenger');
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
 
-  const { createUser, loginWithUser } = useApp();
-  const navigate = useNavigate();
+  const { signUp } = useApp();
+  const navigate   = useNavigate();
 
-  async function handleSubmit(data) {
-    const user = await createUser(data);
-    await loginWithUser(user);
-    if (user.role === 'rider') navigate('/rider/pending', { replace: true });
-    else                       navigate('/passenger',     { replace: true });
+  async function handleSubmit({ password, ...profileData }) {
+    setLoading(true);
+    setError('');
+    try {
+      await signUp(profileData.email, password, profileData);
+      // After sign-up, go to phone verification if phone provided
+      if (profileData.phone) navigate('/auth/verify-phone', { replace: true });
+      else if (profileData.role === 'rider') navigate('/rider/pending', { replace: true });
+      else navigate('/passenger', { replace: true });
+    } catch (err) {
+      setError(err.message || 'Registration failed');
+      setLoading(false);
+    }
   }
+
+  const tabs = [
+    { key: 'passenger', label: 'Passenger' },
+    { key: 'rider',     label: 'Rider'     },
+    { key: 'admin',     label: 'Admin'     },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-6">
-          <ChevronLeft className="w-4 h-4" /> Back
+        <button onClick={() => navigate('/auth/login')} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-6">
+          <ChevronLeft className="w-4 h-4" /> Back to sign in
         </button>
 
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
           <div className="mb-6">
-            <h2 className="text-xl font-extrabold text-gray-900">
-              {role === 'rider' ? 'Rider Registration' : 'Create your account'}
-            </h2>
-            <p className="text-sm text-gray-400 mt-1">
-              {role === 'rider' ? 'Complete all 3 steps to apply' : 'Just your name to get started'}
-            </p>
+            <h2 className="text-xl font-extrabold text-gray-900">Create your account</h2>
+            <p className="text-sm text-gray-400 mt-1">Choose your role to get started</p>
           </div>
 
-          {role === 'rider'
-            ? <RiderForm phone={phone} onSubmit={handleSubmit} />
-            : <PassengerForm phone={phone} onSubmit={handleSubmit} />}
+          <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
+            {tabs.map(t => (
+              <button key={t.key} onClick={() => setRole(t.key)}
+                className={`flex-1 text-sm font-medium py-2 rounded-lg transition-all ${role === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {error && <p className="text-red-500 text-sm mb-4 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+
+          {role === 'passenger' && <PassengerForm onSubmit={handleSubmit} loading={loading} />}
+          {role === 'rider'     && <RiderForm     onSubmit={handleSubmit} loading={loading} />}
+          {role === 'admin'     && <AdminForm     onSubmit={handleSubmit} loading={loading} />}
+
+          <p className="text-center text-sm text-gray-400 mt-6">
+            Already have an account?{' '}
+            <Link to="/auth/login" className="text-orange-500 font-semibold hover:text-orange-600">Sign in</Link>
+          </p>
         </div>
       </div>
     </div>

@@ -4,12 +4,13 @@ import { supabase } from './supabase';
 function toUser(r) {
   if (!r) return null;
   return {
-    id:           r.id,
-    phone:        r.phone,
-    name:         r.name,
-    email:        r.email,
-    role:         r.role,
-    riderStatus:  r.rider_status,
+    id:             r.id,
+    phone:          r.phone,
+    phoneVerified:  r.phone_verified || false,
+    name:           r.name,
+    email:          r.email,
+    role:           r.role,
+    riderStatus:    r.rider_status,
     vehicleType:  r.vehicle_type,
     vehiclePlate: r.vehicle_plate,
     vehicleColor: r.vehicle_color,
@@ -27,7 +28,8 @@ function toUser(r) {
 
 function fromUser(d) {
   const r = {};
-  if (d.phone        !== undefined) r.phone         = d.phone;
+  if (d.phone          !== undefined) r.phone          = d.phone;
+  if (d.phoneVerified  !== undefined) r.phone_verified = d.phoneVerified;
   if (d.name         !== undefined) r.name          = d.name;
   if (d.email        !== undefined) r.email         = d.email;
   if (d.role         !== undefined) r.role          = d.role;
@@ -107,20 +109,7 @@ function fromTrip(d) {
   return r;
 }
 
-// ── Bootstrap admin account ───────────────────────────────────────────────────
-export async function bootstrap() {
-  const { data } = await supabase.from('users').select('id').eq('role', 'admin').limit(1);
-  if (!data?.length) {
-    await supabase.from('users').insert({
-      phone: '+231000000000',
-      name:  'Super Admin',
-      email: 'admin@findmychopper.com',
-      role:  'admin',
-    });
-  }
-}
-
-// ── OTP ───────────────────────────────────────────────────────────────────────
+// ── OTP (used for phone verification) ────────────────────────────────────────
 export async function createOTP(phone, code) {
   await supabase.from('otps').upsert({
     phone,
@@ -149,13 +138,20 @@ export async function getOTPForPhone(phone) {
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
-export async function findUserByPhone(phone) {
-  const { data } = await supabase.from('users').select('*').eq('phone', phone).limit(1);
+export async function findUserById(id) {
+  const { data } = await supabase.from('users').select('*').eq('id', id).single();
+  return toUser(data);
+}
+
+export async function findUserByEmail(email) {
+  const { data } = await supabase.from('users').select('*').eq('email', email).limit(1);
   return toUser(data?.[0] || null);
 }
 
 export async function createUser(userData) {
-  const { data, error } = await supabase.from('users').insert(fromUser(userData)).select().single();
+  const row = fromUser(userData);
+  if (userData.id) row.id = userData.id; // allow explicit id from Supabase Auth
+  const { data, error } = await supabase.from('users').insert(row).select().single();
   if (error) throw error;
   return toUser(data);
 }
