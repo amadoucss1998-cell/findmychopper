@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import * as db from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { generateOTP, calcFare, haversine, locationByName } from '../lib/utils';
+import { calcFare, haversine, locationByName } from '../lib/utils';
 
 const Ctx = createContext(null);
 
@@ -107,24 +107,6 @@ export function AppProvider({ children }) {
     loadUsers();
   }
 
-  // ── SMS phone verification ────────────────────────────────────────────────
-  async function sendPhoneOTP(phone) {
-    const otp = generateOTP();
-    try {
-      const { error } = await supabase.functions.invoke('send-sms', { body: { phone, otp } });
-      if (error) throw error;
-      return { otp: null, devMode: false }; // SMS sent, don't expose code
-    } catch {
-      // Edge Function not deployed yet — store OTP directly and surface code in UI
-      await db.createOTP(phone, otp);
-      return { otp, devMode: true };
-    }
-  }
-
-  async function verifyPhoneOTP(phone, code) {
-    return db.verifyOTP(phone, code);
-  }
-
   // ── Passenger ─────────────────────────────────────────────────────────────
   async function requestRide({ pickup, destination }) {
     const pLoc = locationByName(pickup);
@@ -222,7 +204,6 @@ export function AppProvider({ children }) {
     <Ctx.Provider value={{
       user,
       signIn, signUp, logout, updateProfile,
-      sendPhoneOTP, verifyPhoneOTP,
       activeTrip, setActiveTrip,
       requestRide, cancelTrip, submitPassengerRating,
       acceptTrip, advanceTripStatus, declineTrip,

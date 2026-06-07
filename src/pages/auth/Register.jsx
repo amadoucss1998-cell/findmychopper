@@ -276,9 +276,8 @@ export default function Register() {
     setError('');
     try {
       await signUp(profileData.email, password, profileData);
-      // After sign-up, go to phone verification if phone provided
-      if (profileData.phone) navigate('/auth/verify-phone', { replace: true });
-      else if (profileData.role === 'rider') navigate('/rider/pending', { replace: true });
+      if (profileData.role === 'rider') navigate('/rider/pending', { replace: true });
+      else if (profileData.role === 'admin') navigate('/admin', { replace: true });
       else navigate('/passenger', { replace: true });
     } catch (err) {
       setError(err.message || 'Registration failed');
