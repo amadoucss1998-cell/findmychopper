@@ -1,30 +1,30 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Bike, Users, Car, DollarSign, TrendingUp, Clock } from 'lucide-react';
-import { revenueData, monthlyData, mockRiders, mockTrips } from '../../data/mockData';
+import { Bike, Users, Car, DollarSign, TrendingUp } from 'lucide-react';
+import { revenueData, monthlyData } from '../../data/mockData';
+import { useApp } from '../../context/AppContext';
 import StatCard from '../../components/StatCard';
 import StatusBadge from '../../components/StatusBadge';
 
 export default function Dashboard() {
-  const activeTrips = mockTrips.filter(t => t.status === 'active');
-  const pendingRiders = mockRiders.filter(r => r.status === 'pending');
-  const totalRevenue = mockTrips.filter(t => t.status === 'completed').reduce((s, t) => s + t.fare * 0.2, 0);
+  const { riders, trips, approveRider, rejectRider } = useApp();
+  const activeTrips  = trips.filter(t => t.status === 'active' || t.status === 'started' || t.status === 'accepted' || t.status === 'arrived');
+  const pendingRiders= riders.filter(r => r.status === 'pending');
+  const totalRevenue = trips.filter(t => t.status === 'completed').reduce((s, t) => s + t.fare * 0.2, 0);
 
   return (
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-extrabold text-gray-900">Dashboard</h1>
-        <p className="text-gray-400 text-sm mt-1">Welcome back · {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+        <p className="text-gray-400 text-sm mt-1">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
       </div>
 
-      {/* Stats */}
       <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-        <StatCard title="Total Riders" value={mockRiders.length} sub={`${pendingRiders.length} pending approval`} icon={Bike} color="orange" />
+        <StatCard title="Total Riders" value={riders.length} sub={`${pendingRiders.length} pending`} icon={Bike} color="orange" />
         <StatCard title="Active Trips" value={activeTrips.length} sub="right now" icon={Car} color="blue" />
-        <StatCard title="Total Trips" value={mockTrips.length} sub="all time" icon={TrendingUp} color="green" />
+        <StatCard title="Total Trips" value={trips.length} sub="all time" icon={TrendingUp} color="green" />
         <StatCard title="Revenue (20%)" value={`$${totalRevenue.toFixed(2)}`} sub="platform commission" icon={DollarSign} color="purple" />
       </div>
 
-      {/* Charts */}
       <div className="grid lg:grid-cols-2 gap-6 mb-8">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <h2 className="font-semibold text-gray-900 mb-4">Weekly Revenue</h2>
@@ -50,15 +50,13 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Pending approvals + recent trips */}
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Pending riders */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-gray-900">Pending Approvals</h2>
-            <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-medium">{pendingRiders.length} new</span>
+            {pendingRiders.length > 0 && <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-medium">{pendingRiders.length} new</span>}
           </div>
-          {pendingRiders.length === 0 && <p className="text-sm text-gray-400">No pending riders</p>}
+          {pendingRiders.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">All caught up ✓</p>}
           {pendingRiders.map(rider => (
             <div key={rider.id} className="flex items-center gap-3 py-3 border-b border-gray-50 last:border-0">
               <div className="w-9 h-9 bg-orange-100 rounded-full flex items-center justify-center text-sm font-bold text-orange-500">{rider.name[0]}</div>
@@ -67,17 +65,16 @@ export default function Dashboard() {
                 <p className="text-xs text-gray-400">{rider.motorcycle}</p>
               </div>
               <div className="flex gap-1.5">
-                <button className="text-xs px-2.5 py-1 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600">Approve</button>
-                <button className="text-xs px-2.5 py-1 bg-red-50 text-red-500 rounded-lg font-medium hover:bg-red-100">Reject</button>
+                <button onClick={() => approveRider(rider.id)} className="text-xs px-2.5 py-1 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600">Approve</button>
+                <button onClick={() => rejectRider(rider.id)} className="text-xs px-2.5 py-1 bg-red-50 text-red-500 rounded-lg font-medium hover:bg-red-100">Reject</button>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Recent trips */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <h2 className="font-semibold text-gray-900 mb-4">Recent Trips</h2>
-          {mockTrips.slice(0, 4).map(trip => (
+          {trips.slice(0, 5).map(trip => (
             <div key={trip.id} className="flex items-center gap-3 py-3 border-b border-gray-50 last:border-0">
               <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
                 <Car className="w-4 h-4 text-gray-400" />

@@ -1,17 +1,22 @@
 import { useState } from 'react';
-import { Search, Filter, Star, ChevronRight } from 'lucide-react';
-import { mockRiders } from '../../data/mockData';
+import { Search, Star, ChevronRight } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
 import StatusBadge from '../../components/StatusBadge';
 
-function RiderDetail({ rider, onClose, onApprove, onSuspend }) {
+function RiderDetail({ rider, onClose }) {
+  const { approveRider, suspendRider, rejectRider } = useApp();
+
+  function handle(action) {
+    action(rider.id);
+    onClose();
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="p-6 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-gray-900 text-lg">Rider Details</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-sm">✕</button>
-          </div>
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-bold text-gray-900 text-lg">Rider Details</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
         </div>
         <div className="p-6">
           <div className="flex items-center gap-4 mb-5">
@@ -22,39 +27,35 @@ function RiderDetail({ rider, onClose, onApprove, onSuspend }) {
               <div className="flex items-center gap-2 mt-1">
                 <StatusBadge status={rider.status} />
                 {rider.rating > 0 && (
-                  <div className="flex items-center gap-0.5 text-xs text-gray-500">
-                    <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />{rider.rating}
-                  </div>
+                  <span className="flex items-center gap-0.5 text-xs text-gray-500"><Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />{rider.rating}</span>
                 )}
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-xl p-4 mb-5">
+          <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-4 mb-5 text-sm">
             {[
               { label: 'Motorcycle', value: rider.motorcycle },
               { label: 'Plate', value: rider.plate },
               { label: 'Total Trips', value: rider.totalTrips },
               { label: 'Joined', value: rider.joined },
-              { label: 'Earnings', value: `$${rider.earnings.toFixed(2)}` },
+              { label: 'Total Earnings', value: `$${rider.earnings.toFixed(2)}` },
+              { label: 'License', value: rider.license_number || 'LB-DL-00' + rider.id },
             ].map(({ label, value }) => (
-              <div key={label}>
-                <p className="text-xs text-gray-400">{label}</p>
-                <p className="text-sm font-medium text-gray-900">{value}</p>
-              </div>
+              <div key={label}><p className="text-xs text-gray-400">{label}</p><p className="font-medium text-gray-900">{value}</p></div>
             ))}
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             {rider.status === 'pending' && (
               <>
-                <button onClick={() => onApprove(rider.id)} className="flex-1 py-2.5 bg-green-500 text-white rounded-xl font-semibold text-sm hover:bg-green-600">Approve</button>
-                <button className="flex-1 py-2.5 bg-red-50 text-red-500 rounded-xl font-semibold text-sm hover:bg-red-100">Reject</button>
+                <button onClick={() => handle(approveRider)} className="flex-1 py-2.5 bg-green-500 text-white rounded-xl font-semibold text-sm hover:bg-green-600">Approve</button>
+                <button onClick={() => handle(rejectRider)} className="flex-1 py-2.5 bg-red-50 text-red-500 rounded-xl font-semibold text-sm hover:bg-red-100">Reject</button>
               </>
             )}
             {rider.status === 'approved' && (
-              <button onClick={() => onSuspend(rider.id)} className="flex-1 py-2.5 bg-red-50 text-red-500 rounded-xl font-semibold text-sm hover:bg-red-100">Suspend Rider</button>
+              <button onClick={() => handle(suspendRider)} className="flex-1 py-2.5 bg-red-50 text-red-500 rounded-xl font-semibold text-sm hover:bg-red-100">Suspend Rider</button>
             )}
-            {rider.status === 'suspended' && (
-              <button onClick={() => onApprove(rider.id)} className="flex-1 py-2.5 bg-green-500 text-white rounded-xl font-semibold text-sm hover:bg-green-600">Reinstate</button>
+            {(rider.status === 'suspended' || rider.status === 'rejected') && (
+              <button onClick={() => handle(approveRider)} className="flex-1 py-2.5 bg-green-500 text-white rounded-xl font-semibold text-sm hover:bg-green-600">Reinstate</button>
             )}
           </div>
         </div>
@@ -64,7 +65,7 @@ function RiderDetail({ rider, onClose, onApprove, onSuspend }) {
 }
 
 export default function Riders() {
-  const [riders, setRiders] = useState(mockRiders);
+  const { riders } = useApp();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -74,41 +75,39 @@ export default function Riders() {
     (r.name.toLowerCase().includes(search.toLowerCase()) || r.phone.includes(search))
   );
 
-  function approve(id) {
-    setRiders(rs => rs.map(r => r.id === id ? { ...r, status: 'approved' } : r));
-    setSelected(null);
-  }
-
-  function suspend(id) {
-    setRiders(rs => rs.map(r => r.id === id ? { ...r, status: 'suspended' } : r));
-    setSelected(null);
-  }
+  const counts = {
+    all: riders.length,
+    approved: riders.filter(r => r.status === 'approved').length,
+    pending:  riders.filter(r => r.status === 'pending').length,
+    suspended:riders.filter(r => r.status === 'suspended').length,
+  };
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-extrabold text-gray-900">Riders</h1>
-          <p className="text-gray-400 text-sm">{riders.length} total riders</p>
+          <p className="text-gray-400 text-sm">{riders.length} total · {counts.pending} pending approval</p>
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
-        <div className="relative flex-1">
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search riders…" className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search riders…"
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
         </div>
         <div className="flex gap-2 flex-wrap">
-          {['all', 'approved', 'pending', 'suspended'].map(f => (
-            <button key={f} onClick={() => setFilter(f)} className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${filter === f ? 'bg-orange-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+          {Object.entries(counts).map(([f, count]) => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${filter === f ? 'bg-orange-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
               {f.charAt(0).toUpperCase() + f.slice(1)}
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filter === f ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>{count}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -139,13 +138,10 @@ export default function Riders() {
                     <p className="text-xs text-gray-400">{rider.plate}</p>
                   </td>
                   <td className="px-5 py-4"><StatusBadge status={rider.status} /></td>
-                  <td className="px-5 py-4 hidden md:table-cell"><span className="text-sm text-gray-700">{rider.totalTrips}</span></td>
+                  <td className="px-5 py-4 hidden md:table-cell text-sm text-gray-700">{rider.totalTrips}</td>
                   <td className="px-5 py-4 hidden md:table-cell">
                     {rider.rating > 0 ? (
-                      <div className="flex items-center gap-1">
-                        <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
-                        <span className="text-sm text-gray-700">{rider.rating}</span>
-                      </div>
+                      <div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" /><span className="text-sm text-gray-700">{rider.rating}</span></div>
                     ) : <span className="text-xs text-gray-300">—</span>}
                   </td>
                   <td className="px-5 py-4"><ChevronRight className="w-4 h-4 text-gray-300" /></td>
@@ -157,7 +153,7 @@ export default function Riders() {
         </div>
       </div>
 
-      {selected && <RiderDetail rider={selected} onClose={() => setSelected(null)} onApprove={approve} onSuspend={suspend} />}
+      {selected && <RiderDetail rider={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }

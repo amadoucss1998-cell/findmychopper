@@ -1,16 +1,19 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
-import { revenueData, monthlyData, mockRiders } from '../../data/mockData';
+import { revenueData, monthlyData } from '../../data/mockData';
+import { useApp } from '../../context/AppContext';
 import { TrendingUp, DollarSign, Percent } from 'lucide-react';
 
-const topRiders = mockRiders
-  .filter(r => r.status === 'approved')
-  .sort((a, b) => b.earnings - a.earnings)
-  .slice(0, 5);
-
 export default function Revenue() {
-  const weeklyTotal = revenueData.reduce((s, d) => s + d.revenue, 0);
+  const { riders, trips } = useApp();
+  const weeklyTotal      = revenueData.reduce((s, d) => s + d.revenue, 0);
   const weeklyCommission = weeklyTotal * 0.2;
-  const monthlyCommission = monthlyData.reduce((s, d) => s + d.revenue * 0.2, 0);
+  const monthlyCommission= monthlyData.reduce((s, d) => s + d.revenue * 0.2, 0);
+  const totalAllTime     = trips.filter(t => t.status === 'completed').reduce((s, t) => s + t.fare * 0.2, 0);
+
+  const topRiders = [...riders]
+    .filter(r => r.status === 'approved')
+    .sort((a, b) => b.earnings - a.earnings)
+    .slice(0, 5);
 
   return (
     <div>
@@ -19,12 +22,11 @@ export default function Revenue() {
         <p className="text-gray-400 text-sm">Platform commission analytics (20% per trip)</p>
       </div>
 
-      {/* Stats */}
       <div className="grid sm:grid-cols-3 gap-4 mb-8">
         {[
           { label: 'This Week', value: `$${weeklyCommission.toFixed(2)}`, sub: `from $${weeklyTotal.toFixed(2)} in fares`, icon: DollarSign, color: 'text-green-500 bg-green-50' },
-          { label: 'This Month', value: `$${monthlyCommission.toFixed(2)}`, sub: `from $${(monthlyCommission / 0.2).toFixed(2)} in fares`, icon: TrendingUp, color: 'text-blue-500 bg-blue-50' },
-          { label: 'Commission Rate', value: '20%', sub: 'riders keep 80%', icon: Percent, color: 'text-orange-500 bg-orange-50' },
+          { label: 'This Month', value: `$${monthlyCommission.toFixed(2)}`, sub: 'platform commission', icon: TrendingUp, color: 'text-blue-500 bg-blue-50' },
+          { label: 'All Time', value: `$${(totalAllTime + monthlyCommission).toFixed(2)}`, sub: 'total revenue', icon: Percent, color: 'text-orange-500 bg-orange-50' },
         ].map(({ label, value, sub, icon: Icon, color }) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <div className="flex items-start justify-between">
@@ -39,7 +41,6 @@ export default function Revenue() {
         ))}
       </div>
 
-      {/* Charts */}
       <div className="grid lg:grid-cols-2 gap-6 mb-8">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <h2 className="font-semibold text-gray-900 mb-4">Weekly Revenue</h2>
@@ -67,18 +68,14 @@ export default function Revenue() {
         </div>
       </div>
 
-      {/* Top riders */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
         <h2 className="font-semibold text-gray-900 mb-4">Top Earning Riders</h2>
+        {topRiders.length === 0 && <p className="text-sm text-gray-400">No approved riders yet</p>}
         <div className="space-y-3">
           {topRiders.map((rider, i) => (
             <div key={rider.id} className="flex items-center gap-4">
-              <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${i === 0 ? 'bg-yellow-100 text-yellow-600' : i === 1 ? 'bg-gray-100 text-gray-600' : 'bg-orange-50 text-orange-400'}`}>
-                {i + 1}
-              </span>
-              <div className="w-9 h-9 bg-orange-100 rounded-full flex items-center justify-center text-sm font-bold text-orange-500 flex-shrink-0">
-                {rider.name[0]}
-              </div>
+              <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${i === 0 ? 'bg-yellow-100 text-yellow-600' : i === 1 ? 'bg-gray-100 text-gray-600' : 'bg-orange-50 text-orange-400'}`}>{i + 1}</span>
+              <div className="w-9 h-9 bg-orange-100 rounded-full flex items-center justify-center text-sm font-bold text-orange-500 flex-shrink-0">{rider.name[0]}</div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900">{rider.name}</p>
                 <p className="text-xs text-gray-400">{rider.totalTrips} trips</p>
@@ -89,7 +86,7 @@ export default function Revenue() {
               </div>
               <div className="w-24 hidden sm:block">
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-400 rounded-full" style={{ width: `${(rider.earnings / topRiders[0].earnings) * 100}%` }}></div>
+                  <div className="h-full bg-orange-400 rounded-full" style={{ width: `${topRiders[0] ? (rider.earnings / topRiders[0].earnings) * 100 : 0}%` }}></div>
                 </div>
               </div>
             </div>
