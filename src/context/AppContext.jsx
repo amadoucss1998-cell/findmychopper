@@ -1,271 +1,183 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import * as db from '../lib/db';
-import { calcFare, haversine, locationByName } from '../lib/utils';
+import { generateOTP, calcFare, haversine, locationByName, fmtDate } from '../lib/utils';
 
 const Ctx = createContext(null);
 
 export function AppProvider({ children }) {
-  const [user,          setUser]          = useState(null);
-  const [authReady,     setAuthReady]     = useState(false);
-  const [activeTrip,    setActiveTrip]    = useState(null);
-  const [cachedUsers,   setCachedUsers]   = useState([]);
-  const [cachedTrips,   setCachedTrips]   = useState([]);
-  const realtimeSub = useRef(null);
+  const [user,       setUser]       = useState(() => db.getSession());
+  const [otpPhone,   setOtpPhone]   = useState('');
+  const [otpCode,    setOtpCode]    = useState('');   // shown in UI
+  const [activeTrip, setActiveTrip] = useState(null);
 
-  // ── Restore session from Supabase Auth ───────────────────────────────────
+  // Bootstrap admin + restore active trip on mount
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const profile = await db.findUserById(session.user.id);
-        if (profile) {
-          setUser(profile);
-          const trip = await db.getActiveTrip(profile.id, profile.role);
-          if (trip) setActiveTrip(trip);
-        }
-      }
-      setAuthReady(true);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setActiveTrip(null);
-      }
-    });
-    return () => subscription.unsubscribe();
+    db.bootstrap();
+    if (user) {
+      const trip = db.getActiveTrip(user.id, user.role);
+      if (trip) setActiveTrip(trip);
+    }
   }, []);
 
-  // ── Realtime: subscribe to trips when user is logged in ──────────────────
+  // Poll for trip status changes (rider accepts, advances, etc.)
   useEffect(() => {
-    if (!user) return;
-    realtimeSub.current = supabase
-      .channel('trips-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, async payload => {
-        const trip = payload.new;
-        if (!trip) return;
-
-        const isMine =
-          (user.role === 'passenger' && trip.passenger_id === user.id) ||
-          (user.role === 'rider'     && trip.rider_id     === user.id) ||
-          user.role === 'admin';
-
-        if (isMine && activeTrip && trip.id === activeTrip.id) {
-          const fresh = await db.getTrip(trip.id);
-          setActiveTrip(['completed','cancelled'].includes(fresh?.status) ? null : fresh);
+    if (!user || !activeTrip) return;
+    const interval = setInterval(() => {
+      const fresh = db.getTrip(activeTrip.id);
+      if (fresh && fresh.status !== activeTrip.status) {
+        setActiveTrip(fresh);
+        if (['completed','cancelled'].includes(fresh.status)) {
+          clearInterval(interval);
         }
-
-        if (user.role === 'admin') {
-          setCachedTrips(prev => {
-            const idx = prev.findIndex(t => t.id === trip.id);
-            const mapped = {
-              id: trip.id,
-              passengerId: trip.passenger_id,
-              passengerName: trip.passenger_name,
-              riderId: trip.rider_id,
-              riderName: trip.rider_name,
-              pickup: trip.pickup,
-              destination: trip.destination,
-              fare: trip.fare,
-              distance: trip.distance,
-              status: trip.status,
-              createdAt: trip.created_at,
-            };
-            if (idx >= 0) {
-              const next = [...prev];
-              next[idx] = mapped;
-              return next;
-            }
-            return [mapped, ...prev];
-          });
-        }
-      })
-      .subscribe();
-
-    return () => {
-      realtimeSub.current?.unsubscribe();
-    };
-  }, [user?.id]);
-
-  // ── Load admin caches ─────────────────────────────────────────────────────
-  useEffect(() => {
-    if (user?.role !== 'admin') return;
-    db.getAllUsers().then(setCachedUsers);
-    db.getAllTrips().then(setCachedTrips);
-  }, [user?.id]);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [user, activeTrip]);
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  async function signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    const profile = await db.findUserById(data.user.id);
-    if (!profile) throw new Error('Profile not found');
-    setUser(profile);
-    const trip = await db.getActiveTrip(profile.id, profile.role);
+  function sendOTP(phone) {
+    const code = generateOTP();
+    db.createOTP(phone, code);
+    setOtpPhone(phone);
+    setOtpCode(code);
+    return code;
+  }
+
+  function verifyOTP(phone, code) {
+    return db.verifyOTP(phone, code);
+  }
+
+  function loginWithUser(u) {
+    db.saveSession(u);
+    setUser(u);
+    const trip = db.getActiveTrip(u.id, u.role);
     if (trip) setActiveTrip(trip);
-    return profile;
   }
 
-  async function signUp({ email, password, name, role, phone, ...extra }) {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
-    const profile = await db.createUser({
-      id: data.user.id,
-      email,
-      name,
-      role,
-      phone: phone || null,
-      riderStatus: role === 'rider' ? 'pending' : null,
-      ...extra,
-    });
-    setUser(profile);
-    return profile;
-  }
-
-  async function logout() {
-    await supabase.auth.signOut();
+  function logout() {
+    db.clearSession();
     setUser(null);
     setActiveTrip(null);
+    setOtpPhone('');
+    setOtpCode('');
   }
 
-  async function updateProfile(patch) {
+  function updateProfile(patch) {
     if (!user) return;
-    const updated = await db.updateUser(user.id, patch);
+    const updated = db.updateUser(user.id, patch);
+    db.saveSession(updated);
     setUser(updated);
-    return updated;
   }
 
   // ── Passenger: request a ride ─────────────────────────────────────────────
-  async function requestRide({ pickup, destination }) {
+  function requestRide({ pickup, destination }) {
     const pLoc = locationByName(pickup);
     const dLoc = locationByName(destination);
     const distKm = haversine(pLoc.lat, pLoc.lng, dLoc.lat, dLoc.lng);
     const durationMin = Math.round(distKm / 0.3 + 2);
     const fare = calcFare(distKm, durationMin);
 
-    const trip = await db.createTrip({
-      passengerId:    user.id,
-      passengerName:  user.name,
-      passengerPhone: user.phone || null,
+    const trip = db.createTrip({
+      passengerId:   user.id,
+      passengerName: user.name,
+      passengerPhone:user.phone,
       pickup,
-      pickupLat:      pLoc.lat,
-      pickupLng:      pLoc.lng,
+      pickupLat:     pLoc.lat,
+      pickupLng:     pLoc.lng,
       destination,
-      destLat:        dLoc.lat,
-      destLng:        dLoc.lng,
+      destLat:       dLoc.lat,
+      destLng:       dLoc.lng,
       fare,
-      distance:       distKm,
-      duration:       durationMin,
+      distance:      distKm,
+      duration:      durationMin,
     });
     setActiveTrip(trip);
     return trip;
   }
 
-  async function cancelTrip() {
+  function cancelTrip() {
     if (!activeTrip) return;
-    await db.updateTrip(activeTrip.id, { status: 'cancelled', cancelledAt: new Date().toISOString() });
+    const updated = db.updateTrip(activeTrip.id, { status: 'cancelled', cancelledAt: Date.now() });
     setActiveTrip(null);
   }
 
-  async function submitPassengerRating(score, comment = '') {
+  function submitPassengerRating(score, comment = '') {
     if (!activeTrip) return;
-    await db.updateTrip(activeTrip.id, { passengerRating: score, passengerComment: comment });
+    db.updateTrip(activeTrip.id, { passengerRating: score, passengerComment: comment });
     if (activeTrip.riderId) {
-      const riderTrips = await db.getTripsForRider(activeTrip.riderId);
-      const rated = riderTrips.filter(t => t.passengerRating);
-      const avg = rated.reduce((s, t) => s + t.passengerRating, 0) / rated.length;
-      await db.updateUser(activeTrip.riderId, {
-        rating: parseFloat(avg.toFixed(1)),
-        ratingCount: rated.length,
-      });
+      const riderTrips = db.getTripsForRider(activeTrip.riderId).filter(t => t.passengerRating);
+      const avg = riderTrips.reduce((s, t) => s + t.passengerRating, 0) / riderTrips.length;
+      db.updateUser(activeTrip.riderId, { rating: parseFloat(avg.toFixed(1)), ratingCount: riderTrips.length });
     }
     setActiveTrip(null);
   }
 
   // ── Rider ─────────────────────────────────────────────────────────────────
-  async function acceptTrip(tripId) {
-    const updated = await db.updateTrip(tripId, {
-      riderId:         user.id,
-      riderName:       user.name,
-      riderPhone:      user.phone || null,
+  function acceptTrip(tripId) {
+    const updated = db.updateTrip(tripId, {
+      riderId:    user.id,
+      riderName:  user.name,
+      riderPhone: user.phone,
       riderMotorcycle: user.motorcycle,
-      riderPlate:      user.plate,
-      riderRating:     user.rating || 0,
-      status:          'accepted',
-      acceptedAt:      new Date().toISOString(),
+      riderPlate: user.plate,
+      riderRating: user.rating || 0,
+      status:     'accepted',
+      acceptedAt: Date.now(),
     });
     setActiveTrip(updated);
   }
 
-  async function advanceTripStatus() {
+  function advanceTripStatus() {
     if (!activeTrip) return;
     const next = { accepted: 'arrived', arrived: 'started', started: 'completed' };
     const newStatus = next[activeTrip.status];
     if (!newStatus) return;
     const patch = { status: newStatus };
     if (newStatus === 'completed') {
-      patch.completedAt = new Date().toISOString();
+      patch.completedAt = Date.now();
       const earn = parseFloat((activeTrip.fare * 0.8).toFixed(2));
-      const updated = await db.updateUser(user.id, {
+      db.updateUser(user.id, {
         totalTrips: (user.totalTrips || 0) + 1,
         earnings:   parseFloat(((user.earnings || 0) + earn).toFixed(2)),
       });
-      setUser(updated);
+      const fresh = db.updateUser(user.id, {});
+      db.saveSession(fresh);
+      setUser(fresh);
     }
-    const updated = await db.updateTrip(activeTrip.id, patch);
+    const updated = db.updateTrip(activeTrip.id, patch);
     setActiveTrip(newStatus === 'completed' ? null : updated);
   }
 
-  function declineTrip() { setActiveTrip(null); }
+  function declineTrip() {
+    setActiveTrip(null);
+  }
 
   // ── Admin ─────────────────────────────────────────────────────────────────
-  async function approveRider(id) {
-    await db.updateUser(id, { riderStatus: 'approved' });
-    setCachedUsers(prev => prev.map(u => u.id === id ? { ...u, riderStatus: 'approved' } : u));
-  }
-  async function suspendRider(id) {
-    await db.updateUser(id, { riderStatus: 'suspended' });
-    setCachedUsers(prev => prev.map(u => u.id === id ? { ...u, riderStatus: 'suspended' } : u));
-  }
-  async function rejectRider(id) {
-    await db.updateUser(id, { riderStatus: 'rejected' });
-    setCachedUsers(prev => prev.map(u => u.id === id ? { ...u, riderStatus: 'rejected' } : u));
-  }
-  async function reinstateRider(id) {
-    await db.updateUser(id, { riderStatus: 'approved' });
-    setCachedUsers(prev => prev.map(u => u.id === id ? { ...u, riderStatus: 'approved' } : u));
-  }
+  function approveRider(id)  { db.updateUser(id, { riderStatus: 'approved' }); }
+  function suspendRider(id)  { db.updateUser(id, { riderStatus: 'suspended' }); }
+  function rejectRider(id)   { db.updateUser(id, { riderStatus: 'rejected' }); }
+  function reinstateRider(id){ db.updateUser(id, { riderStatus: 'approved' }); }
 
   // ── Computed helpers ──────────────────────────────────────────────────────
-  const getAllRiders     = useCallback(() => cachedUsers.filter(u => u.role === 'rider'),     [cachedUsers]);
-  const getAllPassengers = useCallback(() => cachedUsers.filter(u => u.role === 'passenger'), [cachedUsers]);
-  const getAllTrips      = useCallback(() => cachedTrips,                                      [cachedTrips]);
-  const getMyTrips      = useCallback(() =>
-    user ? (user.role === 'passenger'
-      ? cachedTrips.filter(t => t.passengerId === user.id)
-      : cachedTrips.filter(t => t.riderId    === user.id))
-    : [], [user, cachedTrips]);
-
-  // Load my own trips into cache when user changes
-  useEffect(() => {
-    if (!user || user.role === 'admin') return;
-    const fn = user.role === 'passenger' ? db.getTripsForPassenger : db.getTripsForRider;
-    fn(user.id).then(setCachedTrips);
-  }, [user?.id]);
-
-  const getPending = useCallback(() => db.getPendingTrip(), []);
-
-  if (!authReady) return null;
+  const getAllRiders    = useCallback(() => db.getAllRiders(),     []);
+  const getAllPassengers= useCallback(() => db.getAllPassengers(), []);
+  const getAllTrips     = useCallback(() => db.getAllTrips(),      []);
+  const getMyTrips     = useCallback(() => user
+    ? (user.role === 'passenger' ? db.getTripsForPassenger(user.id) : db.getTripsForRider(user.id))
+    : [], [user]);
+  const getPending     = useCallback(() => db.getPendingTrip(),   []);
 
   return (
     <Ctx.Provider value={{
-      user,
-      signIn, signUp, logout, updateProfile,
+      user, otpPhone, otpCode,
+      sendOTP, verifyOTP, loginWithUser, logout, updateProfile,
       activeTrip, setActiveTrip,
       requestRide, cancelTrip, submitPassengerRating,
       acceptTrip, advanceTripStatus, declineTrip,
       approveRider, suspendRider, rejectRider, reinstateRider,
       getAllRiders, getAllPassengers, getAllTrips, getMyTrips, getPending,
+      findUserByPhone: db.findUserByPhone,
+      createUser: db.createUser,
       updateUser: db.updateUser,
     }}>
       {children}

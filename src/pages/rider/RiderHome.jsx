@@ -33,8 +33,8 @@ export default function RiderHome() {
   // Poll for pending requests when online
   useEffect(() => {
     if (!online || activeTrip) { setPending(null); return; }
-    const interval = setInterval(async () => {
-      const trip = await db.getPendingTrip();
+    const interval = setInterval(() => {
+      const trip = db.getPendingTrip();
       if (trip && !declined) setPending(trip);
       else if (!trip)        setPending(null);
     }, 1500);
